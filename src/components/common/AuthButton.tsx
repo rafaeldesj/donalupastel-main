@@ -41,6 +41,7 @@ export const AuthButton = () => {
     if (userData.staffFunctions.cook) roles.push('Cozinha');
     if (userData.staffFunctions.attendant) roles.push('Atendimento');
     if (userData.staffFunctions.cashier) roles.push('Caixa');
+    if (userData.staffFunctions.delivery) roles.push('Entrega');
     return roles.length > 0 ? ` [${roles.join(', ')}]` : '';
   };
 

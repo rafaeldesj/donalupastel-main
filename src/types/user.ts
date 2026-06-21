@@ -4,6 +4,7 @@ export interface StaffFunctions {
   cook: boolean;       // Cozinheiro
   attendant: boolean;  // Atendente
   cashier: boolean;    // Caixa
+  delivery?: boolean;  // Entregador
 }
 
 export interface UserAddress {

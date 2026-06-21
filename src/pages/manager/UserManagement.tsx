@@ -20,6 +20,7 @@ export const UserManagement = () => {
   const [cook, setCook] = useState(false);
   const [attendant, setAttendant] = useState(false);
   const [cashier, setCashier] = useState(false);
+  const [delivery, setDelivery] = useState(false);
   
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export const UserManagement = () => {
     setCook(false);
     setAttendant(false);
     setCashier(false);
+    setDelivery(false);
     setError(null);
     setSuccess(null);
     setShowForm(true);
@@ -72,6 +74,7 @@ export const UserManagement = () => {
     setCook(user.staffFunctions?.cook || false);
     setAttendant(user.staffFunctions?.attendant || false);
     setCashier(user.staffFunctions?.cashier || false);
+    setDelivery(user.staffFunctions?.delivery || false);
     setError(null);
     setSuccess(null);
     setShowForm(true);
@@ -131,7 +134,8 @@ export const UserManagement = () => {
     const staffFunctions: StaffFunctions = {
       cook: role === 'staff' ? cook : false,
       attendant: role === 'staff' ? attendant : false,
-      cashier: role === 'staff' ? cashier : false
+      cashier: role === 'staff' ? cashier : false,
+      delivery: role === 'staff' ? delivery : false
     };
 
     const payload: Omit<UserDocument, 'uid'> = {
@@ -196,6 +200,7 @@ export const UserManagement = () => {
     if (u.staffFunctions.cook) f.push('Cozinha');
     if (u.staffFunctions.attendant) f.push('Balcão');
     if (u.staffFunctions.cashier) f.push('Caixa');
+    if (u.staffFunctions.delivery) f.push('Entregador');
     return f.length > 0 ? f.join(', ') : 'Nenhuma';
   };
 
@@ -386,7 +391,7 @@ export const UserManagement = () => {
             {role === 'staff' && (
               <div className="input-group" style={{ gridColumn: '1 / -1', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <label style={{ marginBottom: '0.5rem', display: 'block', fontWeight: 600 }}>Funções Operacionais na Pastelaria:</label>
-                <div style={{ display: 'flex', gap: '2rem' }}>
+                <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                     <input type="checkbox" checked={cook} onChange={(e) => setCook(e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
                     Cozinheiro
@@ -398,6 +403,10 @@ export const UserManagement = () => {
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                     <input type="checkbox" checked={cashier} onChange={(e) => setCashier(e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
                     Caixa / Recebimentos
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={delivery} onChange={(e) => setDelivery(e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                    Entregador
                   </label>
                 </div>
               </div>

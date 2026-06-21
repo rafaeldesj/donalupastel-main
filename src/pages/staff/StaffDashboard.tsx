@@ -6,7 +6,7 @@ import { db } from '../../config/firebase';
 import type { OrderDocument } from '../../types/order';
 
 interface StaffDashboardProps {
-  filter?: 'cook' | 'attendant' | 'cashier';
+  filter?: 'cook' | 'attendant' | 'cashier' | 'delivery';
 }
 
 export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
@@ -51,8 +51,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
   const attendingOrders = orders.filter(o => o.status === 'ready');
   const cashierOrders = orders.filter(o => o.status === 'ready');
+  const deliveryOrders = orders.filter(o => (o.status === 'ready' || o.status === 'delivering') && o.address);
 
-  const hasAnyFunction = staff && (staff.cook || staff.attendant || staff.cashier);
+  const hasAnyFunction = staff && (staff.cook || staff.attendant || staff.cashier || staff.delivery);
 
   if (loadingOrders) {
     return (
@@ -70,6 +71,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     if (f === 'cook') return staff?.cook;
     if (f === 'attendant') return staff?.attendant;
     if (f === 'cashier') return staff?.cashier;
+    if (f === 'delivery') return staff?.delivery;
     return false;
   };
 
@@ -78,7 +80,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
       {!hasAnyFunction && userData?.role === 'staff' ? (
         <div className="alert-box" style={{ textAlign: 'center', padding: '2rem' }}>
           <h3>Nenhuma função atribuída ao seu perfil!</h3>
-          <p>Solicite ao Administrador para ativar suas permissões (Cozinheiro, Caixa ou Atendente) via checkbox no Firestore.</p>
+          <p>Solicite ao Administrador para ativar suas permissões (Cozinheiro, Caixa, Atendente ou Entregador) via checkbox no Firestore.</p>
         </div>
       ) : (
         <div className="staff-grid" style={{ gridTemplateColumns: '1fr' }}>
@@ -192,6 +194,61 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', marginTop: '0.75rem', padding: '0.6rem' }}>
                         Confirmar Pagamento e Finalizar
                       </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Fila de Entregas */}
+          {filter === 'delivery' && isAuthorized('delivery') && (
+            <div className="staff-section delivery-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+              <div className="section-title">
+                <Navigation className="section-icon text-gold" size={24} style={{ color: 'var(--primary-gold)' }} />
+                <h3 style={{ fontSize: '1.4rem' }}>Fila de Entregas ({deliveryOrders.length} pendentes)</h3>
+              </div>
+              <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
+                {deliveryOrders.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', padding: '1rem', gridColumn: '1 / -1', textAlign: 'center' }}>Nenhuma entrega pendente.</p>
+                ) : (
+                  deliveryOrders.map((order) => (
+                    <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                      <div className="order-meta">
+                        <strong>Pedido #{order.id?.slice(-4).toUpperCase()}</strong>
+                        <span className="order-badge-status" style={{ 
+                          backgroundColor: order.status === 'delivering' ? '#3b82f615' : '#10b98115', 
+                          color: order.status === 'delivering' ? '#60a5fa' : '#10b981' 
+                        }}>
+                          {order.status === 'delivering' ? 'Em Rota de Entrega' : 'Pronto para Entrega'}
+                        </span>
+                      </div>
+                      <div style={{ margin: '1rem 0' }}>
+                        {order.items.map((item, index) => (
+                          <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong></p>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
+                        <strong>Cliente:</strong> {order.clientName}
+                      </div>
+                      {order.address && (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(59, 130, 246, 0.05)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.1)', marginBottom: '1rem' }}>
+                          <Navigation size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                          {order.address.street}, {order.address.number} ({order.address.neighborhood})
+                          {order.address.complement && <div style={{ fontSize: '0.75rem', marginTop: '2px', opacity: 0.8 }}>Compl: {order.address.complement}</div>}
+                        </div>
+                      )}
+                      <div className="order-actions">
+                        {order.status === 'ready' ? (
+                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'delivering')} className="btn-small btn-primary" style={{ width: '100%', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                            <Play size={14} /> Iniciar Entrega
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                            <Check size={14} /> Concluir Entrega (Pago)
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}

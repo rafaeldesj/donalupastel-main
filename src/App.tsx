@@ -5,7 +5,7 @@ import { ClientDashboard } from './pages/client/ClientDashboard';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
 import { AdminDashboard } from './pages/manager/AdminDashboard';
 import { UserManagement } from './pages/manager/UserManagement';
-import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingBag, Heart, FileText, Users } from 'lucide-react';
+import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingBag, Heart, FileText, Users, Navigation } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 
 const MainLayout = () => {
@@ -23,6 +23,7 @@ const MainLayout = () => {
         if (userData.staffFunctions?.cook) setActiveView('cozinha');
         else if (userData.staffFunctions?.attendant) setActiveView('atendimento');
         else if (userData.staffFunctions?.cashier) setActiveView('caixa');
+        else if (userData.staffFunctions?.delivery) setActiveView('entrega');
       } else if (['manager', 'owner', 'developer'].includes(userData.role)) {
         setActiveView('admin');
       } else {
@@ -95,6 +96,11 @@ const MainLayout = () => {
   // Fila de caixa (Caixa, admin, owner, dev)
   if (role === 'developer' || role === 'owner' || role === 'manager' || (role === 'staff' && staff?.cashier)) {
     menuItems.push({ id: 'caixa', label: 'Fila Caixa', icon: CreditCard });
+  }
+
+  // Fila de entregas (Entregador, admin, owner, dev)
+  if (role === 'developer' || role === 'owner' || role === 'manager' || (role === 'staff' && staff?.delivery)) {
+    menuItems.push({ id: 'entrega', label: 'Fila de Entregas', icon: Navigation });
   }
 
   // Painel Administrativo (admin, owner, dev)
@@ -173,6 +179,7 @@ const MainLayout = () => {
           {activeView === 'cozinha' && <StaffDashboard filter="cook" />}
           {activeView === 'atendimento' && <StaffDashboard filter="attendant" />}
           {activeView === 'caixa' && <StaffDashboard filter="cashier" />}
+          {activeView === 'entrega' && <StaffDashboard filter="delivery" />}
           {activeView === 'admin' && <AdminDashboard />}
           {activeView === 'users' && <UserManagement />}
         </main>
