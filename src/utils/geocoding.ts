@@ -16,11 +16,30 @@ export async function geocodeAddress(
     return [DONA_LU_COORDS[0] + latOffset, DONA_LU_COORDS[1] + lngOffset] as [number, number];
   };
 
-  // Helper para limpar nome de rua para ViaCEP
+  // Helper para limpar e normalizar o nome da rua para o ViaCEP
   const getCoreStreetName = (name: string): string => {
-    return name
-      .replace(/^\s*(rua|avenida|av\.?|r\.?|travessa|tv\.?|praça|pr\.?|alameda|al\.?|rodovia|rod\.?)\s+/i, '')
+    let cleaned = name
+      .toLowerCase()
+      // Remove prefixos comuns
+      .replace(/^\s*(rua|avenida|av\.?|r\.?|travessa|tv\.?|praça|pr\.?|alameda|al\.?|rodovia|rod\.?)\s+/g, '')
       .trim();
+
+    // Substitui abreviações comuns de títulos por extenso
+    cleaned = cleaned
+      .replace(/\bdr\.?\b/g, 'doutor')
+      .replace(/\bdra\.?\b/g, 'doutora')
+      .replace(/\bprof\.?\b/g, 'professor')
+      .replace(/\bprofa\.?\b/g, 'professora')
+      .replace(/\bsr\.?\b/g, 'senhor')
+      .replace(/\bsra\.?\b/g, 'senhora');
+
+    // Remove qualquer ponto ou caractere especial para evitar erros HTTP 400 do ViaCEP
+    cleaned = cleaned.replace(/[^a-z0-9\s]/g, ' ');
+    
+    // Normaliza múltiplos espaços
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+    return cleaned;
   };
 
   try {
@@ -28,70 +47,82 @@ export async function geocodeAddress(
     const coreStreet = getCoreStreetName(street);
     const viaCepUrl = `https://viacep.com.br/ws/RJ/Rio%20de%20Janeiro/${encodeURIComponent(coreStreet)}/json/`;
     const viaCepRes = await fetch(viaCepUrl);
-    const viaCepData = await viaCepRes.json();
+    
+    if (viaCepRes.ok) {
+      const contentType = viaCepRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const viaCepData = await viaCepRes.json();
 
-    if (Array.isArray(viaCepData) && viaCepData.length > 0) {
-      // Filtrar pelo bairro (Campo Grande por padrão ou o fornecido)
-      const targetNeighborhood = (neighborhood || 'Campo Grande').toLowerCase();
-      let entries = viaCepData.filter(
-        (item: any) =>
-          item.bairro.toLowerCase().includes(targetNeighborhood) ||
-          targetNeighborhood.includes(item.bairro.toLowerCase())
-      );
+        if (Array.isArray(viaCepData) && viaCepData.length > 0) {
+          // Filtrar pelo bairro (Campo Grande por padrão ou o fornecido)
+          const targetNeighborhood = (neighborhood || 'Campo Grande').toLowerCase();
+          let entries = viaCepData.filter(
+            (item: any) =>
+              item.bairro.toLowerCase().includes(targetNeighborhood) ||
+              targetNeighborhood.includes(item.bairro.toLowerCase())
+          );
 
-      // Se não achou com o bairro, usa a lista toda
-      if (entries.length === 0) {
-        entries = viaCepData;
-      }
-
-      // Encontrar a melhor correspondência de CEP baseado no número da casa
-      let matchedCep = '';
-      if (entries.length > 0) {
-        const matchingEntry = entries.find((item: any) => {
-          const comp = (item.complemento || '').toLowerCase();
-          if (!comp) return false;
-
-          const isOdd = houseNumber % 2 !== 0;
-          const isEven = !isOdd;
-
-          if (comp.includes('lado ímpar') && isEven) return false;
-          if (comp.includes('lado par') && isOdd) return false;
-
-          const numbers = comp.match(/\d+/g)?.map(Number) || [];
-
-          if (comp.includes('até')) {
-            const limit = numbers[0];
-            if (limit && houseNumber > limit) return false;
+          // Se não achou com o bairro, usa a lista toda
+          if (entries.length === 0) {
+            entries = viaCepData;
           }
-          if (comp.includes('de ') && comp.includes('ao fim')) {
-            const limit = numbers[0];
-            if (limit && houseNumber < limit) return false;
+
+          // Encontrar a melhor correspondência de CEP baseado no número da casa
+          let matchedCep = '';
+          if (entries.length > 0) {
+            const matchingEntry = entries.find((item: any) => {
+              const comp = (item.complemento || '').toLowerCase();
+              if (!comp) return false;
+
+              const isOdd = houseNumber % 2 !== 0;
+              const isEven = !isOdd;
+
+              if (comp.includes('lado ímpar') && isEven) return false;
+              if (comp.includes('lado par') && isOdd) return false;
+
+              const numbers = comp.match(/\d+/g)?.map(Number) || [];
+
+              if (comp.includes('até')) {
+                const limit = numbers[0];
+                if (limit && houseNumber > limit) return false;
+              }
+              if (comp.includes('de ') && comp.includes('ao fim')) {
+                const limit = numbers[0];
+                if (limit && houseNumber < limit) return false;
+              }
+              if (comp.includes('de ') && comp.includes('a ')) {
+                const min = numbers[0];
+                const max = numbers[1];
+                if (min && houseNumber < min) return false;
+                if (max && houseNumber > max) return false;
+              }
+              return true;
+            });
+
+            // Se achou correspondência exata, usa ela, senão pega a primeira sem complemento ou a primeira da lista
+            matchedCep = matchingEntry ? matchingEntry.cep : entries[0].cep;
           }
-          if (comp.includes('de ') && comp.includes('a ')) {
-            const min = numbers[0];
-            const max = numbers[1];
-            if (min && houseNumber < min) return false;
-            if (max && houseNumber > max) return false;
-          }
-          return true;
-        });
 
-        // Se achou correspondência exata, usa ela, senão pega a primeira sem complemento ou a primeira da lista
-        matchedCep = matchingEntry ? matchingEntry.cep : entries[0].cep;
-      }
+          // 2. Se temos um CEP, buscar coordenadas via AwesomeAPI
+          if (matchedCep) {
+            const cleanCep = matchedCep.replace(/\D/g, '');
+            const awesomeUrl = `https://cep.awesomeapi.com.br/json/${cleanCep}`;
+            const awesomeRes = await fetch(awesomeUrl);
+            
+            if (awesomeRes.ok) {
+              const awesomeContentType = awesomeRes.headers.get('content-type') || '';
+              if (awesomeContentType.includes('application/json')) {
+                const awesomeData = await awesomeRes.json();
 
-      // 2. Se temos um CEP, buscar coordenadas via AwesomeAPI
-      if (matchedCep) {
-        const cleanCep = matchedCep.replace(/\D/g, '');
-        const awesomeUrl = `https://cep.awesomeapi.com.br/json/${cleanCep}`;
-        const awesomeRes = await fetch(awesomeUrl);
-        const awesomeData = await awesomeRes.json();
-
-        if (awesomeData && awesomeData.lat && awesomeData.lng) {
-          const lat = parseFloat(awesomeData.lat);
-          const lng = parseFloat(awesomeData.lng);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            return [lat, lng];
+                if (awesomeData && awesomeData.lat && awesomeData.lng) {
+                  const lat = parseFloat(awesomeData.lat);
+                  const lng = parseFloat(awesomeData.lng);
+                  if (!isNaN(lat) && !isNaN(lng)) {
+                    return [lat, lng];
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -137,61 +168,9 @@ export async function geocodeAddress(
           lng: parseFloat(d.lon)
         }));
 
-        if (points.length === 1) {
-          return [points[0].lat, points[0].lng];
-        }
-
-        const lats = points.map((p: { lat: number; lng: number }) => p.lat);
-        const lngs = points.map((p: { lat: number; lng: number }) => p.lng);
-        const latMin = Math.min(...lats);
-        const latMax = Math.max(...lats);
-        const lngMin = Math.min(...lngs);
-        const lngMax = Math.max(...lngs);
-        const latSpan = latMax - latMin;
-        const lngSpan = lngMax - lngMin;
-
-        if (lngSpan > latSpan) {
-          points.sort((a: { lat: number; lng: number }, b: { lat: number; lng: number }) => a.lng - b.lng);
-        } else {
-          points.sort((a: { lat: number; lng: number }, b: { lat: number; lng: number }) => a.lat - b.lat);
-        }
-
-        const RIO_CENTRO = { lat: -22.9068, lng: -43.1729 };
-        const distStart = Math.pow(points[0].lat - RIO_CENTRO.lat, 2) + Math.pow(points[0].lng - RIO_CENTRO.lng, 2);
-        const distEnd = Math.pow(points[points.length - 1].lat - RIO_CENTRO.lat, 2) + Math.pow(points[points.length - 1].lng - RIO_CENTRO.lng, 2);
-
-        if (distEnd < distStart) {
-          points.reverse();
-        }
-
-        const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-          const dy = (lat2 - lat1) * 111000;
-          const dx = (lng2 - lng1) * 111000 * Math.cos((lat1 + lat2) * Math.PI / 360);
-          return Math.sqrt(dx * dx + dy * dy);
-        };
-
-        const cumDist = [0];
-        for (let i = 1; i < points.length; i++) {
-          cumDist.push(cumDist[i - 1] + getDistance(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng));
-        }
-
-        const totalLength = cumDist[cumDist.length - 1];
-
-        if (houseNumber <= 0) {
-          return [points[0].lat, points[0].lng];
-        }
-        if (houseNumber >= totalLength) {
-          return [points[points.length - 1].lat, points[points.length - 1].lng];
-        }
-
-        for (let i = 1; i < points.length; i++) {
-          if (houseNumber <= cumDist[i]) {
-            const ratio = (houseNumber - cumDist[i - 1]) / (cumDist[i] - cumDist[i - 1] || 1);
-            const lat = points[i - 1].lat + ratio * (points[i].lat - points[i - 1].lat);
-            const lng = points[i - 1].lng + ratio * (points[i].lng - points[i - 1].lng);
-            return [lat, lng];
-          }
-        }
+        const avgLat = points.reduce((acc: number, p: { lat: number; lng: number }) => acc + p.lat, 0) / points.length;
+        const avgLng = points.reduce((acc: number, p: { lat: number; lng: number }) => acc + p.lng, 0) / points.length;
+        return [avgLat, avgLng];
       }
     }
   } catch (err) {
