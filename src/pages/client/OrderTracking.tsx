@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/f
 import { db } from '../../config/firebase';
 import { useAuth } from '../../hooks/useAuth';
 import type { OrderDocument } from '../../types/order';
-import { Clock, MapPin, ClipboardList, ChefHat, ShoppingBag, Navigation, CheckCircle, HelpCircle } from 'lucide-react';
+import { Clock, ClipboardList, ChefHat, ShoppingBag, Navigation, CheckCircle } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -17,7 +17,7 @@ interface OrderMapProps {
   deliveryCoords?: { lat: number; lng: number };
 }
 
-const OrderMap = ({ orderId, clientName, address, deliveryCoords }: OrderMapProps) => {
+const OrderMap = ({ orderId, address, deliveryCoords }: OrderMapProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ origin?: L.Marker; current?: L.Marker; destination?: L.Marker; polyline?: L.Polyline }>({});
