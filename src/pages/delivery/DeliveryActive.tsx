@@ -12,9 +12,10 @@ const DONA_LU_COORDS: [number, number] = [-22.9112951, -43.5602961];
 interface AvailableOrderMapProps {
   orderId: string;
   address: any;
+  clientCoords?: { lat: number; lng: number };
 }
 
-const AvailableOrderMap = ({ orderId, address }: AvailableOrderMapProps) => {
+const AvailableOrderMap = ({ orderId, address, clientCoords: savedClientCoords }: AvailableOrderMapProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ origin?: L.Marker; destination?: L.Marker; polyline?: L.Polyline }>({});
@@ -28,10 +29,17 @@ const AvailableOrderMap = ({ orderId, address }: AvailableOrderMapProps) => {
   };
 
   useEffect(() => {
+    // Se o pedido já tem coordenadas salvas, usa direto sem geocodificar
+    if (savedClientCoords) {
+      setDestCoords([savedClientCoords.lat, savedClientCoords.lng]);
+      return;
+    }
+
+    // Fallback: tenta geocodificar o endereço salvo
     if (!address) return;
     const queryStr = `${address.street}, ${address.number}, ${address.neighborhood}, Campo Grande, Rio de Janeiro`;
     
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}`)
+    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}&limit=1&countrycodes=br`)
       .then((res) => res.json())
       .then((data) => {
         if (data && data.length > 0) {
@@ -43,7 +51,7 @@ const AvailableOrderMap = ({ orderId, address }: AvailableOrderMapProps) => {
       .catch(() => {
         setDestCoords(getFallbackCoords(orderId));
       });
-  }, [address, orderId]);
+  }, [address, orderId, savedClientCoords]);
 
   useEffect(() => {
     if (!mapContainerRef.current || !destCoords) return;
@@ -133,10 +141,13 @@ const AvailableOrderMap = ({ orderId, address }: AvailableOrderMapProps) => {
         map.fitBounds(bounds, { padding: [25, 25] });
       });
 
-    // Adiciona evento de clique para abrir o Google Maps
+    // Adiciona evento de clique para abrir o Google Maps com rota completa
     map.off('click');
     map.on('click', () => {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${destCoords[0]},${destCoords[1]}&travelmode=driving`, '_blank');
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&origin=${DONA_LU_COORDS[0]},${DONA_LU_COORDS[1]}&destination=${destCoords[0]},${destCoords[1]}&travelmode=driving`,
+        '_blank'
+      );
     });
 
   }, [destCoords]);
@@ -582,7 +593,7 @@ export const DeliveryActive = () => {
                   </div>
 
                   {/* Minimapa mostrando rota da loja ao cliente antes de aceitar */}
-                  <AvailableOrderMap orderId={order.id!} address={order.address} />
+                  <AvailableOrderMap orderId={order.id!} address={order.address} clientCoords={order.clientCoords} />
 
                   <div style={{ maxHeight: '80px', overflowY: 'auto', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                     {order.items.map((it, idx) => (

@@ -372,7 +372,7 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
 
     setSubmitting(true);
     try {
-      const orderData = {
+      const orderData: any = {
         clientUid: user?.uid || '',
         clientName: user?.displayName || user?.email || 'Cliente Anônimo',
         items: cart,
@@ -387,6 +387,8 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
           zipCode: '23000-000',
           complement,
         },
+        // Salva as coordenadas geocodificadas para uso no mapa do entregador
+        ...(addressCoords ? { clientCoords: { lat: addressCoords[0], lng: addressCoords[1] } } : {}),
       };
 
       await addDoc(collection(db, 'orders'), orderData);
