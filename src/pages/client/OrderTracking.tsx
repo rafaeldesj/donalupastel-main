@@ -6,6 +6,7 @@ import type { OrderDocument } from '../../types/order';
 import { Clock, ClipboardList, ChefHat, ShoppingBag, Navigation, CheckCircle } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { geocodeAddress } from '../../utils/geocoding';
 
 const DONA_LU_COORDS: [number, number] = [-22.9112951, -43.5602961];
 
@@ -15,9 +16,10 @@ interface OrderMapProps {
   clientName: string;
   address: any;
   deliveryCoords?: { lat: number; lng: number };
+  clientCoords?: { lat: number; lng: number };
 }
 
-const OrderMap = ({ orderId, address, deliveryCoords }: OrderMapProps) => {
+const OrderMap = ({ orderId, address, deliveryCoords, clientCoords }: OrderMapProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ origin?: L.Marker; current?: L.Marker; destination?: L.Marker; polyline?: L.Polyline }>({});
@@ -31,22 +33,21 @@ const OrderMap = ({ orderId, address, deliveryCoords }: OrderMapProps) => {
   };
 
   useEffect(() => {
+    if (clientCoords) {
+      setDestCoords([clientCoords.lat, clientCoords.lng]);
+      return;
+    }
+
     if (!address) return;
-    const queryStr = `${address.street}, ${address.number}, ${address.neighborhood}, Campo Grande, Rio de Janeiro`;
     
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.length > 0) {
-          setDestCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-        } else {
-          setDestCoords(getFallbackCoords(orderId));
-        }
+    geocodeAddress(address.street, address.number, address.neighborhood)
+      .then((coords) => {
+        setDestCoords(coords);
       })
       .catch(() => {
         setDestCoords(getFallbackCoords(orderId));
       });
-  }, [address, orderId]);
+  }, [address, orderId, clientCoords]);
 
   useEffect(() => {
     if (!mapContainerRef.current || !destCoords) return;
@@ -199,25 +200,19 @@ export const OrderTracking = () => {
     setSimulatingOrderId(order.id!);
 
     let dest: [number, number] = DONA_LU_COORDS;
-    const addr = order.address;
-    const queryStr = `${addr.street}, ${addr.number}, ${addr.neighborhood}, Campo Grande, Rio de Janeiro`;
     
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}`);
-      const data = await res.json();
-      if (data && data.length > 0) {
-        dest = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-      } else {
+    if (order.clientCoords) {
+      dest = [order.clientCoords.lat, order.clientCoords.lng];
+    } else {
+      const addr = order.address;
+      try {
+        dest = await geocodeAddress(addr.street, addr.number, addr.neighborhood);
+      } catch {
         const hash = order.id!.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         const latOffset = ((hash % 20) - 10) / 400;
         const lngOffset = ((hash % 17) - 8) / 400;
         dest = [DONA_LU_COORDS[0] + latOffset, DONA_LU_COORDS[1] + lngOffset];
       }
-    } catch {
-      const hash = order.id!.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const latOffset = ((hash % 20) - 10) / 400;
-      const lngOffset = ((hash % 17) - 8) / 400;
-      dest = [DONA_LU_COORDS[0] + latOffset, DONA_LU_COORDS[1] + lngOffset];
     }
 
     // Busca rota real pelas ruas via OSRM para a simulação
@@ -508,6 +503,7 @@ export const OrderTracking = () => {
                       clientName={order.clientName}
                       address={order.address}
                       deliveryCoords={order.deliveryCoords}
+                      clientCoords={order.clientCoords}
                     />
                   )}
                 </div>

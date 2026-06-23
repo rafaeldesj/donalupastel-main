@@ -6,6 +6,7 @@ import type { OrderDocument } from '../../types/order';
 import { Play, Check, AlertTriangle, MapPin, ShoppingBag } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { geocodeAddress } from '../../utils/geocoding';
 
 const DONA_LU_COORDS: [number, number] = [-22.9112951, -43.5602961];
 
@@ -35,67 +36,17 @@ const AvailableOrderMap = ({ orderId, address, clientCoords: savedClientCoords }
       return;
     }
 
-    // Fallback: geocodifica o endereço usando seleção inteligente de segmento
+    // Geocodifica o endereço usando o utilitário centralizado
     if (!address) return;
 
-    const MAX_DIST = 0.15; // ~15km
-    const isNearby = (lat: number, lng: number) =>
-      Math.abs(lat - DONA_LU_COORDS[0]) < MAX_DIST && Math.abs(lng - DONA_LU_COORDS[1]) < MAX_DIST;
-
-    // Heurística de seleção de segmento: número alto = segmento mais distante do centro
-    const pickBestSegment = (segs: any[], houseNum: number) => {
-      const withDist = segs.map((s: any) => {
-        const lat = parseFloat(s.lat);
-        const lng = parseFloat(s.lon);
-        const dist = Math.sqrt(Math.pow(lat - DONA_LU_COORDS[0], 2) + Math.pow(lng - DONA_LU_COORDS[1], 2));
-        return { s, lat, lng, dist };
-      });
-      withDist.sort((a, b) => a.dist - b.dist);
-      return houseNum >= 200
-        ? withDist[withDist.length - 1].s // mais distante para números altos
-        : withDist[0].s; // mais próximo para números baixos
-    };
-
-    const houseNumber = parseInt(address.number) || 0;
-
-    // Nominatim: todos os segmentos da rua (até 10)
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address.street + ', Campo Grande, Rio de Janeiro')}&countrycodes=br&limit=10`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.length > 0) {
-          const local = data.filter((d: any) => isNearby(parseFloat(d.lat), parseFloat(d.lon)));
-          if (local.length > 0) {
-            const best = pickBestSegment(local, houseNumber);
-            setDestCoords([parseFloat(best.lat), parseFloat(best.lon)]);
-            return;
-          }
-        }
-
-        // Fallback: Photon com seleção de segmento
-        fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(address.street)}&lat=${DONA_LU_COORDS[0]}&lon=${DONA_LU_COORDS[1]}&limit=10`)
-          .then((res) => res.json())
-          .then((photonData) => {
-            if (photonData && photonData.features && photonData.features.length > 0) {
-              const filtered = photonData.features.filter((f: any) => {
-                if (f.properties?.countrycode !== 'BR') return false;
-                const [fLng, fLat] = f.geometry.coordinates;
-                return isNearby(fLat, fLng);
-              });
-              if (filtered.length > 0) {
-                const adapted = filtered.map((f: any) => ({
-                  lat: String(f.geometry.coordinates[1]),
-                  lon: String(f.geometry.coordinates[0])
-                }));
-                const best = pickBestSegment(adapted, houseNumber);
-                setDestCoords([parseFloat(best.lat), parseFloat(best.lon)]);
-                return;
-              }
-            }
-            setDestCoords(getFallbackCoords(orderId));
-          })
-          .catch(() => setDestCoords(getFallbackCoords(orderId)));
+    geocodeAddress(address.street, address.number, address.neighborhood)
+      .then((coords) => {
+        setDestCoords(coords);
       })
-      .catch(() => setDestCoords(getFallbackCoords(orderId)));
+      .catch((err) => {
+        console.error("Erro ao geocodificar no minimapa:", err);
+        setDestCoords(getFallbackCoords(orderId));
+      });
   }, [address, orderId, savedClientCoords]);
 
   useEffect(() => {
@@ -268,29 +219,26 @@ export const DeliveryActive = () => {
     return [DONA_LU_COORDS[0] + latOffset, DONA_LU_COORDS[1] + lngOffset];
   };
 
-  // Busca coordenadas do endereço via Nominatim (Geocoding)
+  // Busca coordenadas do endereço do pedido ativo
   useEffect(() => {
     if (!activeOrder) {
       setDestCoords(null);
       return;
     }
 
+    if (activeOrder.clientCoords) {
+      setDestCoords([activeOrder.clientCoords.lat, activeOrder.clientCoords.lng]);
+      return;
+    }
+
     const addr = activeOrder.address;
-    const queryStr = `${addr.street}, ${addr.number}, ${addr.neighborhood}, Campo Grande, Rio de Janeiro`;
-    
     setLoadingDest(true);
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.length > 0) {
-          setDestCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-        } else {
-          // Fallback se não encontrar o endereço fictício/real
-          setDestCoords(getFallbackCoords(activeOrder.id || 'fallback'));
-        }
+    geocodeAddress(addr.street, addr.number, addr.neighborhood)
+      .then((coords) => {
+        setDestCoords(coords);
       })
       .catch((err) => {
-        console.error("Erro na geocodificação:", err);
+        console.error("Erro na geocodificação do pedido ativo:", err);
         setDestCoords(getFallbackCoords(activeOrder.id || 'fallback'));
       })
       .finally(() => {

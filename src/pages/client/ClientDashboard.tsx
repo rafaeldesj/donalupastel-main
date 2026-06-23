@@ -10,6 +10,7 @@ import pastelCrocante from '../../assets/pastel_crocante.png';
 import pastelFrito from '../../assets/pastel_frito.png';
 import pastelRefri from '../../assets/pastel_refri.png';
 import pastelCombo from '../../assets/pastel_combo.png';
+import { geocodeAddress } from '../../utils/geocoding';
 
 interface ClientDashboardProps {
   showOnly?: 'menu' | 'loyalty';
@@ -147,39 +148,6 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     return () => clearTimeout(delayDebounceFn);
   }, [addressInput]);
 
-  // Helper: verifica se coordenadas estão próximas a Campo Grande (~15km)
-  const isNearDonaLu = (lat: number, lng: number): boolean => {
-    const DONA_LU_LAT = -22.9112951;
-    const DONA_LU_LON = -43.5602961;
-    const MAX_DIST_DEG = 0.15; // ~15km
-    return Math.abs(lat - DONA_LU_LAT) < MAX_DIST_DEG && Math.abs(lng - DONA_LU_LON) < MAX_DIST_DEG;
-  };
-
-  // Helper: seleciona o melhor segmento de rua baseado no número da casa
-  // Ruas brasileiras tipicamente têm números crescendo para longe do centro
-  const pickBestSegment = (segments: any[], houseNumber: number): any => {
-    const DONA_LU_LAT = -22.9112951;
-    const DONA_LU_LON = -43.5602961;
-
-    // Calcula distância de cada segmento até a Dona Lu
-    const withDist = segments.map((seg: any) => {
-      const [lng, lat] = seg.geometry ? seg.geometry.coordinates : [parseFloat(seg.lon), parseFloat(seg.lat)];
-      const dist = Math.sqrt(Math.pow(lat - DONA_LU_LAT, 2) + Math.pow(lng - DONA_LU_LON, 2));
-      return { seg, lat, lng, dist };
-    });
-
-    // Ordena por distância
-    withDist.sort((a, b) => a.dist - b.dist);
-
-    // Heurística: números maiores ficam mais longe do centro da rua
-    // Números ≥ 200: prefere o segmento MAIS DISTANTE da Dona Lu
-    // Números < 200: prefere o segmento MAIS PRÓXIMO da Dona Lu
-    if (houseNumber >= 200) {
-      return withDist[withDist.length - 1].seg; // mais distante
-    }
-    return withDist[0].seg; // mais próximo
-  };
-
   // Geocodificação em tempo real do endereço com debounce de 800ms ao digitar a vírgula + número
   useEffect(() => {
     const parsed = parseAddress(addressInput);
@@ -189,52 +157,18 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     }
 
     const delayDebounceFn = setTimeout(() => {
-      const houseNumber = parseInt(parsed.number) || 0;
       setGeocoding(true);
-
-      // Usa Nominatim para pegar TODOS os segmentos da rua (até 10)
-      // e depois seleciona o mais adequado pelo número da casa
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(parsed.street + ', Campo Grande, Rio de Janeiro')}&countrycodes=br&limit=10`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.length > 0) {
-            // Filtra por proximidade a Campo Grande
-            const local = data.filter((d: any) => isNearDonaLu(parseFloat(d.lat), parseFloat(d.lon)));
-            if (local.length > 0) {
-              const best = pickBestSegment(local, houseNumber);
-              setAddressCoords([parseFloat(best.lat), parseFloat(best.lon)]);
-              return;
-            }
-          }
-
-          // Fallback: Photon
-          fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(parsed.street)}&lat=-22.9112951&lon=-43.5602961&limit=10`)
-            .then((res) => res.json())
-            .then((photonData) => {
-              if (photonData && photonData.features && photonData.features.length > 0) {
-                const filtered = photonData.features.filter((f: any) => {
-                  if (f.properties?.countrycode !== 'BR') return false;
-                  const [fLng, fLat] = f.geometry.coordinates;
-                  return isNearDonaLu(fLat, fLng);
-                });
-                if (filtered.length > 0) {
-                  // Adapta formato para pickBestSegment
-                  const adapted = filtered.map((f: any) => ({
-                    ...f,
-                    lat: String(f.geometry.coordinates[1]),
-                    lon: String(f.geometry.coordinates[0])
-                  }));
-                  const best = pickBestSegment(adapted, houseNumber);
-                  setAddressCoords([parseFloat(best.lat), parseFloat(best.lon)]);
-                  return;
-                }
-              }
-              setAddressCoords(null);
-            })
-            .catch(() => setAddressCoords(null));
+      geocodeAddress(parsed.street, parsed.number, parsed.neighborhood)
+        .then((coords) => {
+          setAddressCoords(coords);
         })
-        .catch(() => setAddressCoords(null))
-        .finally(() => setGeocoding(false));
+        .catch((err) => {
+          console.error("Erro na geocodificação:", err);
+          setAddressCoords(null);
+        })
+        .finally(() => {
+          setGeocoding(false);
+        });
     }, 800);
 
     return () => clearTimeout(delayDebounceFn);
