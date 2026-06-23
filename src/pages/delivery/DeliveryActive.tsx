@@ -38,13 +38,25 @@ const AvailableOrderMap = ({ orderId, address, clientCoords: savedClientCoords }
     // Fallback: geocodifica o endereço usando Photon (mais preciso para endereços BR)
     if (!address) return;
 
-    const queryStr = `${address.street}, ${address.number}`;
+    // Helper: verifica se coordenada está próxima a Campo Grande (~15km)
+    const MAX_DIST = 0.15;
+    const isNearby = (lat: number, lng: number) =>
+      Math.abs(lat - DONA_LU_COORDS[0]) < MAX_DIST && Math.abs(lng - DONA_LU_COORDS[1]) < MAX_DIST;
 
-    fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(queryStr)}&lat=${DONA_LU_COORDS[0]}&lon=${DONA_LU_COORDS[1]}&limit=5&lang=pt`)
+    // Busca apenas pela rua (sem número) — Photon é mais preciso sem o número
+    const streetQuery = address.street;
+
+    fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(streetQuery)}&lat=${DONA_LU_COORDS[0]}&lon=${DONA_LU_COORDS[1]}&limit=10&lang=pt`)
       .then((res) => res.json())
       .then((data) => {
         if (data && data.features && data.features.length > 0) {
-          const filtered = data.features.filter((f: any) => f.properties?.countrycode === 'BR');
+          // Filtra por Brasil E proximidade a Campo Grande (max 15km)
+          const filtered = data.features.filter((f: any) => {
+            if (f.properties?.countrycode !== 'BR') return false;
+            const [fLng, fLat] = f.geometry.coordinates;
+            return isNearby(fLat, fLng);
+          });
+
           if (filtered.length > 0) {
             const [lng, lat] = filtered[0].geometry.coordinates;
             setDestCoords([lat, lng]);
@@ -53,12 +65,17 @@ const AvailableOrderMap = ({ orderId, address, clientCoords: savedClientCoords }
         }
 
         // Fallback: Nominatim com parâmetros estruturados
-        const streetQuery = `${address.number} ${address.street}`;
-        fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(streetQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=1`)
+        const nomQuery = `${address.number} ${address.street}`;
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(nomQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=5`)
           .then((res) => res.json())
           .then((nomData) => {
             if (nomData && nomData.length > 0) {
-              setDestCoords([parseFloat(nomData[0].lat), parseFloat(nomData[0].lon)]);
+              const local = nomData.find((d: any) => isNearby(parseFloat(d.lat), parseFloat(d.lon)));
+              if (local) {
+                setDestCoords([parseFloat(local.lat), parseFloat(local.lon)]);
+              } else {
+                setDestCoords(getFallbackCoords(orderId));
+              }
             } else {
               setDestCoords(getFallbackCoords(orderId));
             }

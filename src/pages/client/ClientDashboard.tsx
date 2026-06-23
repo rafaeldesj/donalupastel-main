@@ -147,6 +147,14 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     return () => clearTimeout(delayDebounceFn);
   }, [addressInput]);
 
+  // Helper: calcula distância aproximada em graus entre dois pontos
+  const isNearDonaLu = (lat: number, lng: number): boolean => {
+    const DONA_LU_LAT = -22.9112951;
+    const DONA_LU_LON = -43.5602961;
+    const MAX_DIST_DEG = 0.15; // ~15km
+    return Math.abs(lat - DONA_LU_LAT) < MAX_DIST_DEG && Math.abs(lng - DONA_LU_LON) < MAX_DIST_DEG;
+  };
+
   // Geocodificação em tempo real do endereço com debounce de 800ms ao digitar a vírgula + número
   useEffect(() => {
     const parsed = parseAddress(addressInput);
@@ -156,23 +164,25 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     }
 
     const delayDebounceFn = setTimeout(() => {
-      // Usa Photon (komoot.io) — mesma API do autocomplete — que é mais precisa para Brasil
-      // O bias lat/lon direciona resultados próximos à Dona Lu Pastelaria (Campo Grande, RJ)
       const DONA_LU_LAT = -22.9112951;
       const DONA_LU_LON = -43.5602961;
-      const queryStr = `${parsed.street}, ${parsed.number}`;
 
       setGeocoding(true);
 
-      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(queryStr)}&lat=${DONA_LU_LAT}&lon=${DONA_LU_LON}&limit=5&lang=pt`)
+      // Busca apenas a rua (sem número) — Photon é mais preciso sem o número
+      const streetOnlyQuery = parsed.street;
+
+      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(streetOnlyQuery)}&lat=${DONA_LU_LAT}&lon=${DONA_LU_LON}&limit=10&lang=pt`)
         .then((res) => res.json())
         .then((data) => {
           if (data && data.features && data.features.length > 0) {
-            // Filtra resultados do Brasil no raio de Campo Grande
+            // Filtra APENAS resultados do Brasil E próximos a Campo Grande (max 15km)
             const filtered = data.features.filter((f: any) => {
-              const cc = f.properties?.countrycode;
-              return cc === 'BR';
+              if (f.properties?.countrycode !== 'BR') return false;
+              const [fLng, fLat] = f.geometry.coordinates;
+              return isNearDonaLu(fLat, fLng);
             });
+
             if (filtered.length > 0) {
               const [lng, lat] = filtered[0].geometry.coordinates;
               setAddressCoords([lat, lng]);
@@ -180,13 +190,19 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
             }
           }
 
-          // Fallback: Nominatim estruturado com parâmetros separados
+          // Fallback: Nominatim com parâmetros estruturados
           const streetQuery = `${parsed.number} ${parsed.street}`;
-          fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(streetQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=1`)
+          fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(streetQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=5`)
             .then((res) => res.json())
             .then((nomData) => {
               if (nomData && nomData.length > 0) {
-                setAddressCoords([parseFloat(nomData[0].lat), parseFloat(nomData[0].lon)]);
+                // Filtra também por proximidade
+                const local = nomData.find((d: any) => isNearDonaLu(parseFloat(d.lat), parseFloat(d.lon)));
+                if (local) {
+                  setAddressCoords([parseFloat(local.lat), parseFloat(local.lon)]);
+                } else {
+                  setAddressCoords(null);
+                }
               } else {
                 setAddressCoords(null);
               }
@@ -270,6 +286,13 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     setAddressInput(formatted);
     setSuggestions([]);
     setShowSuggestions(false);
+
+    // Salva imediatamente as coordenadas do Photon ao selecionar da lista
+    // (coords 100% precisas, pois vieram do resultado de autocomplete)
+    if (feature.geometry?.coordinates) {
+      const [lng, lat] = feature.geometry.coordinates;
+      setAddressCoords([lat, lng]);
+    }
   };
 
   // Manipuladores de Edição
