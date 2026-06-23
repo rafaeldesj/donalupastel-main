@@ -156,36 +156,42 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired }
     }
 
     const delayDebounceFn = setTimeout(() => {
-      // Evita duplicar "Campo Grande" no query se bairro já é Campo Grande
-      const isNeighborhoodCG = parsed.neighborhood.toLowerCase().includes('campo grande');
-      const locationSuffix = isNeighborhoodCG
-        ? 'Campo Grande, Rio de Janeiro, Brasil'
-        : `${parsed.neighborhood}, Campo Grande, Rio de Janeiro, Brasil`;
-
-      const queryStr = `${parsed.street}, ${parsed.number}, ${locationSuffix}`;
-      // Viewbox aproximado de Campo Grande, RJ
-      const viewbox = '-43.65,-22.88,-43.45,-23.00';
+      // Usa Photon (komoot.io) — mesma API do autocomplete — que é mais precisa para Brasil
+      // O bias lat/lon direciona resultados próximos à Dona Lu Pastelaria (Campo Grande, RJ)
+      const DONA_LU_LAT = -22.9112951;
+      const DONA_LU_LON = -43.5602961;
+      const queryStr = `${parsed.street}, ${parsed.number}`;
 
       setGeocoding(true);
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStr)}&limit=1&countrycodes=br&viewbox=${viewbox}&bounded=1`)
+
+      fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(queryStr)}&lat=${DONA_LU_LAT}&lon=${DONA_LU_LON}&limit=5&lang=pt`)
         .then((res) => res.json())
         .then((data) => {
-          if (data && data.length > 0) {
-            setAddressCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-          } else {
-            // Tenta sem o bounded para ampliar a busca
-            const fallbackQueryStr = `${parsed.street}, ${locationSuffix}`;
-            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fallbackQueryStr)}&limit=1&countrycodes=br&viewbox=${viewbox}&bounded=1`)
-              .then((res) => res.json())
-              .then((fallbackData) => {
-                if (fallbackData && fallbackData.length > 0) {
-                  setAddressCoords([parseFloat(fallbackData[0].lat), parseFloat(fallbackData[0].lon)]);
-                } else {
-                  setAddressCoords(null);
-                }
-              })
-              .catch(() => setAddressCoords(null));
+          if (data && data.features && data.features.length > 0) {
+            // Filtra resultados do Brasil no raio de Campo Grande
+            const filtered = data.features.filter((f: any) => {
+              const cc = f.properties?.countrycode;
+              return cc === 'BR';
+            });
+            if (filtered.length > 0) {
+              const [lng, lat] = filtered[0].geometry.coordinates;
+              setAddressCoords([lat, lng]);
+              return;
+            }
           }
+
+          // Fallback: Nominatim estruturado com parâmetros separados
+          const streetQuery = `${parsed.number} ${parsed.street}`;
+          fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(streetQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=1`)
+            .then((res) => res.json())
+            .then((nomData) => {
+              if (nomData && nomData.length > 0) {
+                setAddressCoords([parseFloat(nomData[0].lat), parseFloat(nomData[0].lon)]);
+              } else {
+                setAddressCoords(null);
+              }
+            })
+            .catch(() => setAddressCoords(null));
         })
         .catch(() => setAddressCoords(null))
         .finally(() => setGeocoding(false));

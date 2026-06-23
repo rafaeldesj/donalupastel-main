@@ -35,48 +35,35 @@ const AvailableOrderMap = ({ orderId, address, clientCoords: savedClientCoords }
       return;
     }
 
-    // Fallback: geocodifica o endereço salvo com precisão melhorada
+    // Fallback: geocodifica o endereço usando Photon (mais preciso para endereços BR)
     if (!address) return;
 
-    // Evita duplicar "Campo Grande" no query
-    const neighborhood = address.neighborhood || '';
-    const isFieldSameAsCity = neighborhood.toLowerCase().includes('campo grande');
-    const locationSuffix = isFieldSameAsCity
-      ? 'Campo Grande, Rio de Janeiro, Brasil'
-      : `${neighborhood}, Campo Grande, Rio de Janeiro, Brasil`;
+    const queryStr = `${address.street}, ${address.number}`;
 
-    // Query 1: com número completo + bounding box de Campo Grande (mais preciso)
-    const queryWithNumber = `${address.street}, ${address.number}, ${locationSuffix}`;
-    // Viewbox aproximado de Campo Grande, RJ
-    const viewbox = '-43.65,-22.88,-43.45,-23.00';
-
-    fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryWithNumber)}&limit=1&countrycodes=br&viewbox=${viewbox}&bounded=1`)
+    fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(queryStr)}&lat=${DONA_LU_COORDS[0]}&lon=${DONA_LU_COORDS[1]}&limit=5&lang=pt`)
       .then((res) => res.json())
       .then((data) => {
-        if (data && data.length > 0) {
-          setDestCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-        } else {
-          // Query 2: sem bounded, mas com número
-          return fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryWithNumber)}&limit=1&countrycodes=br`)
-            .then((res) => res.json())
-            .then((data2) => {
-              if (data2 && data2.length > 0) {
-                setDestCoords([parseFloat(data2[0].lat), parseFloat(data2[0].lon)]);
-              } else {
-                // Query 3: somente rua + localidade (sem número)
-                const queryStreetOnly = `${address.street}, ${locationSuffix}`;
-                return fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(queryStreetOnly)}&limit=1&countrycodes=br&viewbox=${viewbox}&bounded=1`)
-                  .then((res) => res.json())
-                  .then((data3) => {
-                    if (data3 && data3.length > 0) {
-                      setDestCoords([parseFloat(data3[0].lat), parseFloat(data3[0].lon)]);
-                    } else {
-                      setDestCoords(getFallbackCoords(orderId));
-                    }
-                  });
-              }
-            });
+        if (data && data.features && data.features.length > 0) {
+          const filtered = data.features.filter((f: any) => f.properties?.countrycode === 'BR');
+          if (filtered.length > 0) {
+            const [lng, lat] = filtered[0].geometry.coordinates;
+            setDestCoords([lat, lng]);
+            return;
+          }
         }
+
+        // Fallback: Nominatim com parâmetros estruturados
+        const streetQuery = `${address.number} ${address.street}`;
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&street=${encodeURIComponent(streetQuery)}&city=Rio+de+Janeiro&state=Rio+de+Janeiro&country=Brazil&countrycodes=br&limit=1`)
+          .then((res) => res.json())
+          .then((nomData) => {
+            if (nomData && nomData.length > 0) {
+              setDestCoords([parseFloat(nomData[0].lat), parseFloat(nomData[0].lon)]);
+            } else {
+              setDestCoords(getFallbackCoords(orderId));
+            }
+          })
+          .catch(() => setDestCoords(getFallbackCoords(orderId)));
       })
       .catch(() => {
         setDestCoords(getFallbackCoords(orderId));
