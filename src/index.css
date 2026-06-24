@@ -1021,7 +1021,18 @@ body {
     height: 54px !important;
   }
   .welcome-msg {
-    display: none !important;
+    display: inline-block !important;
+    font-size: 0.72rem !important;
+    max-width: 65px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    vertical-align: middle;
+    margin-right: 0.1rem;
+  }
+  .header-user-status {
+    gap: 0.35rem !important;
   }
   .brand-text {
     font-size: 1rem !important;
@@ -1814,5 +1825,78 @@ select:focus {
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
   text-align: center;
+}
+
+/* ---- Header Cart Button & Mobile Scrollable Footer ---- */
+.header-cart-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.header-cart-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.header-cart-btn.has-items {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--primary-gold);
+}
+
+.header-cart-btn.has-items:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.cart-count-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--primary-red);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid #0b0f19;
+  line-height: 1;
+  min-width: 10px;
+  text-align: center;
+}
+
+.mobile-only-footer {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .site-footer {
+    display: none !important;
+  }
+  .mobile-only-footer {
+    display: block !important;
+    margin-top: 1.5rem !important;
+    padding: 0.5rem 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
+    text-align: center !important;
+    font-size: 0.68rem !important;
+    color: var(--text-secondary) !important;
+    line-height: 1.3 !important;
+  }
+  .mobile-only-footer p {
+    margin: 0 !important;
+  }
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
+import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
 import { DeliveryMap } from './components/DeliveryMap';
@@ -26,6 +27,17 @@ const MainLayout = () => {
   const { user, userData, logout } = useAuth();
   const [activeView, setActiveView] = useState<string>('menu');
   const [isVisitor, setIsVisitor] = useState<boolean>(false);
+  const [cart, setCart] = useState<OrderItem[]>([]);
+
+  const handleCartClick = () => {
+    setActiveView('menu');
+    setTimeout(() => {
+      const element = document.getElementById('cart-section');
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
+  };
 
   const role = userData?.role || 'client';
   const staff = userData?.staffFunctions;
@@ -172,7 +184,21 @@ const MainLayout = () => {
           <span className="brand-text">Dona Lu Pastelaria</span>
         </div>
         <div className="header-user-status">
-          <span className="welcome-msg">Olá, <strong>{user ? (user.displayName || user.email) : 'Visitante'}</strong></span>
+          {['client', 'developer', 'owner', 'manager'].includes(role) && (
+            <button 
+              onClick={handleCartClick} 
+              className={`header-cart-btn ${cart.length > 0 ? 'has-items' : ''}`}
+              title="Ir para o Carrinho"
+            >
+              <ShoppingBag size={18} />
+              {cart.length > 0 && (
+                <span className="cart-count-badge">
+                  {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                </span>
+              )}
+            </button>
+          )}
+          <span className="welcome-msg">Olá, <strong>{user ? (user.displayName?.split(' ')[0] || user.email?.split('@')[0]) : 'Visitante'}</strong></span>
           {userData?.role && (
             <span className="role-badge">
               <ShieldCheck size={12} style={{ marginRight: '4px' }} />
@@ -213,9 +239,9 @@ const MainLayout = () => {
         {/* 3. Content (Área de Conteúdo Direita) */}
         <main className="content-area-main">
           <Suspense fallback={<ViewLoader />}>
-            {activeView === 'menu' && <ClientDashboard showOnly="menu" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
+            {activeView === 'menu' && <ClientDashboard showOnly="menu" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} cart={cart} setCart={setCart} />}
             {activeView === 'tracking' && <OrderTracking />}
-            {activeView === 'fidelidade' && <ClientDashboard showOnly="loyalty" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
+            {activeView === 'fidelidade' && <ClientDashboard showOnly="loyalty" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} cart={cart} setCart={setCart} />}
             {activeView === 'cozinha' && <StaffDashboard filter="cook" />}
             {activeView === 'atendimento' && <StaffDashboard filter="attendant" />}
             {activeView === 'caixa' && <StaffDashboard filter="cashier" />}
@@ -233,6 +259,12 @@ const MainLayout = () => {
               </div>
             )}
           </Suspense>
+          
+          {/* Mobile Footer (visible only on mobile, scrolls with content) */}
+          <footer className="mobile-only-footer">
+            <p>📍 © 2026 Dona Lu • R. Jícara, 239 - CG | 📞 (21) 3439-5241</p>
+            <p>Dev Rafael Jorge (21) 99565-5031</p>
+          </footer>
         </main>
       </div>
 

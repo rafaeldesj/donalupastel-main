@@ -18,9 +18,18 @@ interface ClientDashboardProps {
   isVisitor?: boolean;
   onLoginRequired?: () => void;
   onNavigate?: (view: string) => void;
+  cart?: OrderItem[];
+  setCart?: React.Dispatch<React.SetStateAction<OrderItem[]>>;
 }
 
-export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired, onNavigate }: ClientDashboardProps) => {
+export const ClientDashboard = ({ 
+  showOnly, 
+  isVisitor = false, 
+  onLoginRequired, 
+  onNavigate,
+  cart: externalCart,
+  setCart: externalSetCart
+}: ClientDashboardProps) => {
   const { user, userData, updatePhoneNumber } = useAuth();
 
   const defaultPastels = [
@@ -54,7 +63,9 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired, 
   const role = userData?.role || 'client';
   const canEdit = ['developer', 'owner', 'manager'].includes(role);
 
-  const [cart, setCart] = useState<OrderItem[]>([]);
+  const [localCart, setLocalCart] = useState<OrderItem[]>([]);
+  const cart = externalCart !== undefined ? externalCart : localCart;
+  const setCart = externalSetCart !== undefined ? externalSetCart : setLocalCart;
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -587,7 +598,7 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired, 
         </div>
 
         {/* Carrinho e Endereço */}
-        <div className="profile-section">
+        <div className="profile-section" id="cart-section">
           <div className="loyalty-card">
             <h3>Carrinho de Compras</h3>
             {cart.length === 0 ? (
