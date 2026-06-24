@@ -499,7 +499,7 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired, 
                 {/* Foto do Pastel */}
                 <div className="pastel-img-container" onClick={() => pastel.image && setZoomedImage(pastel.image)} title="Clique para ampliar">
                   {pastel.image ? (
-                    <img src={pastel.image} alt={pastel.name} className="pastel-card-img" />
+                    <img src={pastel.image} alt={pastel.name} className="pastel-card-img" loading="lazy" decoding="async" />
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', background: 'rgba(255,255,255,0.03)', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Sem foto</div>
                   )}
@@ -786,7 +786,7 @@ export const ClientDashboard = ({ showOnly, isVisitor = false, onLoginRequired, 
             <button type="button" className="lightbox-close-btn" onClick={() => setZoomedImage(null)} aria-label="Fechar imagem">
               <X size={20} />
             </button>
-            <img src={zoomedImage} alt="Pastel Expandido" className="lightbox-img" />
+            <img src={zoomedImage} alt="Pastel Expandido" className="lightbox-img" decoding="async" />
           </div>
         </div>
       )}

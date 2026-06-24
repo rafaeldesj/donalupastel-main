@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper para verificar se o usuário logado tem um dos papéis administrativos ou de desenvolvedor
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    
+    function isAdmin() {
+      return request.auth != null && (
+        getRole() == 'owner' || 
+        getRole() == 'manager' || 
+        getRole() == 'developer'
+      );
+    }
+
+    function isStaff() {
+      return request.auth != null && (
+        getRole() == 'staff' || isAdmin()
+      );
+    }
+    
+    // Regras para a coleção de usuários
+    match /users/{userId} {
+      // Qualquer usuário autenticado pode ler seu próprio documento, ou se for admin/desenvolvedor
+      allow read: if request.auth != null && (
+        request.auth.uid == userId || 
+        isAdmin() ||
+        (resource != null && resource.data.email == request.auth.token.email)
+      );
+      
+      // Permitir listagem (queries) apenas se for admin ou se for uma busca específica pelo próprio email
+      allow list: if request.auth != null && (
+        isAdmin() || 
+        (
+          request.query.limit <= 10 &&
+          request.query.filters.size() == 1 && 
+          request.query.filters[0].op == '==' && 
+          request.query.filters[0].field == 'email' && 
+          request.query.filters[0].value == request.auth.token.email
+        )
+      );
+      
+      // Criar documento: se for o próprio usuário criando seu perfil (deve ser cliente) ou se for admin
+      allow create: if request.auth != null && (
+        (request.auth.uid == userId && request.resource.data.role == 'client') || 
+        isAdmin()
+      );
+      
+      // Atualizar documento: o próprio usuário (não pode mudar seu papel) ou se for admin
+      allow update: if request.auth != null && (
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role) || 
+        isAdmin()
+      );
+      
+      // Excluir: apenas admins
+      allow delete: if isAdmin();
+    }
+    
+    // Regras para a coleção de pedidos (orders)
+    match /orders/{orderId} {
+      // Ler pedidos: se for o cliente que fez o pedido, ou se for staff/admin
+      allow read: if request.auth != null && (
+        resource.data.clientUid == request.auth.uid || 
+        isStaff()
+      );
+      
+      // Criar pedido: usuário autenticado inserindo seu próprio uid como clientUid
+      allow create: if request.auth != null && request.resource.data.clientUid == request.auth.uid;
+      
+      // Atualizar pedido: staff/admin pode atualizar qualquer pedido. O próprio cliente só pode atualizar se o pedido ainda for dele
+      allow update: if request.auth != null && (
+        isStaff() || 
+        (resource.data.clientUid == request.auth.uid && request.resource.data.clientUid == request.auth.uid)
+      );
+      
+      // Excluir pedido: apenas admins
+      allow delete: if isAdmin();
+    }
+  }
+}

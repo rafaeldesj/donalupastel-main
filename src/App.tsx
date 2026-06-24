@@ -1,16 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
-import { ClientDashboard } from './pages/client/ClientDashboard';
-import { StaffDashboard } from './pages/staff/StaffDashboard';
-import { AdminDashboard } from './pages/manager/AdminDashboard';
-import { UserManagement } from './pages/manager/UserManagement';
-import { DeliveryActive } from './pages/delivery/DeliveryActive';
-import { DeliveryHistory } from './pages/delivery/DeliveryHistory';
-import { OrderTracking } from './pages/client/OrderTracking';
 import { DeliveryMap } from './components/DeliveryMap';
 import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingBag, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
+
+// Lazy-loaded components for code-splitting performance
+const ClientDashboard = lazy(() => import('./pages/client/ClientDashboard'));
+const StaffDashboard = lazy(() => import('./pages/staff/StaffDashboard'));
+const AdminDashboard = lazy(() => import('./pages/manager/AdminDashboard'));
+const UserManagement = lazy(() => import('./pages/manager/UserManagement'));
+const DeliveryActive = lazy(() => import('./pages/delivery/DeliveryActive'));
+const DeliveryHistory = lazy(() => import('./pages/delivery/DeliveryHistory'));
+const OrderTracking = lazy(() => import('./pages/client/OrderTracking'));
+
+// Premium feedback state for lazy loading
+const ViewLoader = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '1.25rem', padding: '2rem' }} className="animate-fade-in">
+    <div className="spinner" style={{ width: '42px', height: '42px', borderWidth: '3.5px', borderColor: 'rgba(245, 158, 11, 0.1)', borderTopColor: 'var(--primary-gold)' }} />
+    <span style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', fontWeight: 600, letterSpacing: '0.02em' }}>Carregando painel...</span>
+  </div>
+);
 
 const MainLayout = () => {
   const { user, userData, logout } = useAuth();
@@ -40,7 +50,7 @@ const MainLayout = () => {
     return (
       <div className="login-page-layout">
         <header className="app-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-          <img src={logoDonalu} alt="Dona Lu Pastelaria" style={{ width: '90px', height: '90px', borderRadius: '50%', border: '2px solid var(--primary-gold)', boxShadow: '0 4px 15px rgba(201, 28, 28, 0.4)' }} />
+          <img src={logoDonalu} alt="Dona Lu Pastelaria" decoding="async" style={{ width: '90px', height: '90px', borderRadius: '50%', border: '2px solid var(--primary-gold)', boxShadow: '0 4px 15px rgba(201, 28, 28, 0.4)' }} />
           <h1 className="logo-title" style={{ marginTop: '0.5rem', marginBottom: 0 }}>Dona Lu Pastelaria</h1>
           <p className="subtitle" style={{ margin: 0 }}>Pastéis com borda crocante e irresistível!</p>
         </header>
@@ -158,7 +168,7 @@ const MainLayout = () => {
       {/* 1. Header (Topo) */}
       <header className="site-header">
         <div className="header-brand">
-          <img src={logoDonalu} alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '50%', border: '1px solid var(--primary-gold)' }} />
+          <img src={logoDonalu} alt="Logo" decoding="async" style={{ width: '32px', height: '32px', borderRadius: '50%', border: '1px solid var(--primary-gold)' }} />
           <span className="brand-text">Dona Lu Pastelaria</span>
         </div>
         <div className="header-user-status">
@@ -202,25 +212,27 @@ const MainLayout = () => {
 
         {/* 3. Content (Área de Conteúdo Direita) */}
         <main className="content-area-main">
-          {activeView === 'menu' && <ClientDashboard showOnly="menu" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
-          {activeView === 'tracking' && <OrderTracking />}
-          {activeView === 'fidelidade' && <ClientDashboard showOnly="loyalty" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
-          {activeView === 'cozinha' && <StaffDashboard filter="cook" />}
-          {activeView === 'atendimento' && <StaffDashboard filter="attendant" />}
-          {activeView === 'caixa' && <StaffDashboard filter="cashier" />}
-          {activeView === 'entrega_andamento' && <DeliveryActive />}
-          {activeView === 'entrega_finalizada' && <DeliveryHistory />}
-          {activeView === 'admin' && <AdminDashboard />}
-          {activeView === 'users' && <UserManagement />}
-          {activeView === 'teste_mapa' && (
-            <div style={{ maxWidth: '680px', margin: '0 auto' }}>
-              <div style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>🗺️ Teste do Mapa de Entrega</h2>
-                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Valide aqui a busca de endereço e a geolocalização antes de integrar ao pedido.</p>
+          <Suspense fallback={<ViewLoader />}>
+            {activeView === 'menu' && <ClientDashboard showOnly="menu" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
+            {activeView === 'tracking' && <OrderTracking />}
+            {activeView === 'fidelidade' && <ClientDashboard showOnly="loyalty" isVisitor={isVisitor} onLoginRequired={() => setIsVisitor(false)} onNavigate={setActiveView} />}
+            {activeView === 'cozinha' && <StaffDashboard filter="cook" />}
+            {activeView === 'atendimento' && <StaffDashboard filter="attendant" />}
+            {activeView === 'caixa' && <StaffDashboard filter="cashier" />}
+            {activeView === 'entrega_andamento' && <DeliveryActive />}
+            {activeView === 'entrega_finalizada' && <DeliveryHistory />}
+            {activeView === 'admin' && <AdminDashboard />}
+            {activeView === 'users' && <UserManagement />}
+            {activeView === 'teste_mapa' && (
+              <div style={{ maxWidth: '680px', margin: '0 auto' }}>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h2 style={{ margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>🗺️ Teste do Mapa de Entrega</h2>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Valide aqui a busca de endereço e a geolocalização antes de integrar ao pedido.</p>
+                </div>
+                <DeliveryMap onAddressSelect={(addr) => console.log('Endereço selecionado:', addr)} />
               </div>
-              <DeliveryMap onAddressSelect={(addr) => console.log('Endereço selecionado:', addr)} />
-            </div>
-          )}
+            )}
+          </Suspense>
         </main>
       </div>
 

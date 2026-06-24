@@ -1017,47 +1017,179 @@ body {
 
 @media (max-width: 600px) {
   .site-header {
-    padding: 0 1rem !important;
-    height: 60px !important;
+    padding: 0 0.75rem !important;
+    height: 54px !important;
   }
   .welcome-msg {
     display: none !important;
   }
   .brand-text {
-    font-size: 1.1rem !important;
+    font-size: 1rem !important;
   }
   .role-badge {
-    font-size: 0.65rem !important;
-    padding: 0.15rem 0.45rem !important;
+    font-size: 0.6rem !important;
+    padding: 0.1rem 0.4rem !important;
   }
   .logout-action-btn {
-    padding: 0.3rem 0.65rem !important;
-    font-size: 0.75rem !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.7rem !important;
+  }
+  .content-area-main {
+    padding: 0.75rem !important;
+  }
+  .dashboard-header {
+    margin-bottom: 1rem !important;
+  }
+  .dashboard-header h2 {
+    font-size: 1.35rem !important;
+  }
+  .dashboard-header p {
+    font-size: 0.85rem !important;
+  }
+  .menu-section h3, .profile-section h3 {
+    font-size: 1.05rem !important;
+    margin-bottom: 0.75rem !important;
+  }
+  .left-navigation-sidebar {
+    padding: 0.5rem !important;
+    gap: 0.5rem !important;
+  }
+  .menu-group-label {
+    font-size: 0.65rem !important;
+    margin-bottom: 0.25rem !important;
+    padding-left: 0.25rem !important;
+  }
+  .sidebar-nav-menu {
+    gap: 0.35rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+  .nav-menu-item {
+    font-size: 0.82rem !important;
+    padding: 0.4rem 0.65rem !important;
+    gap: 0.4rem !important;
+    border-radius: 8px !important;
+  }
+  .nav-menu-item svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  .nav-menu-item.active {
+    border-left: none !important;
+    border-bottom: 2px solid var(--primary-gold) !important;
+    border-radius: 0 !important;
+    color: var(--primary-gold) !important;
+    background: transparent !important;
   }
 }
 
 @media (max-width: 500px) {
   .pastel-card {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    padding: 1rem !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    padding: 0.65rem !important;
+    gap: 0.65rem !important;
+    border-radius: 12px !important;
   }
   .pastel-img-container {
-    width: 100% !important;
-    height: 140px !important;
+    width: 68px !important;
+    height: 68px !important;
+    border-radius: 8px !important;
   }
   .pastel-details {
     margin-left: 0 !important;
-    margin-top: 0.75rem !important;
-    width: 100% !important;
+    margin-top: 0 !important;
+    width: auto !important;
+    flex: 1 !important;
+  }
+  .pastel-details h4 {
+    font-size: 0.9rem !important;
+    margin-bottom: 0.15rem !important;
+  }
+  .pastel-details p {
+    font-size: 0.75rem !important;
+    line-height: 1.25 !important;
+    margin-bottom: 0.25rem !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+  }
+  .pastel-price {
+    font-size: 0.85rem !important;
   }
   .pastel-actions {
-    margin-left: 0 !important;
-    margin-top: 0.75rem !important;
-    display: flex !important;
-    flex-direction: row !important;
-    justify-content: flex-end !important;
-    width: 100% !important;
+    margin-left: 0.25rem !important;
+    margin-top: 0 !important;
+    flex-direction: column !important;
+    gap: 0.25rem !important;
+  }
+  .add-to-cart-btn {
+    padding: 0.45rem !important;
+    border-radius: 8px !important;
+  }
+  .add-to-cart-btn svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  .pastel-action-btn {
+    padding: 0.45rem !important;
+    margin-bottom: 0 !important;
+  }
+  .pastel-action-btn.edit-btn {
+    margin-bottom: 0 !important;
+  }
+  .pastel-action-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .loyalty-card {
+    padding: 0.85rem !important;
+    border-radius: 12px !important;
+  }
+  .loyalty-card h3 {
+    font-size: 1rem !important;
+  }
+  .cart-items-list {
+    max-height: 180px !important;
+    gap: 0.35rem !important;
+  }
+  .loyalty-card button {
+    padding: 0.5rem 0.35rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 8px !important;
+  }
+  .loyalty-card button span {
+    font-size: 1.2rem !important;
+  }
+  .stamps-grid {
+    gap: 0.4rem !important;
+    margin-top: 1rem !important;
+  }
+  .stamp-slot {
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+  }
+  .stamp-slot.stamped {
+    font-size: 1.1rem !important;
+  }
+  .stepper-container {
+    gap: 1rem !important;
+    padding-left: 0.5rem !important;
+  }
+  .stepper-line {
+    left: 17px !important;
+  }
+  .step-icon-wrapper {
+    width: 30px !important;
+    height: 30px !important;
+    border-width: 1.5px !important;
+  }
+  .step-icon-wrapper svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .step-label {
+    font-size: 0.75rem !important;
   }
   .lightbox-content {
     max-width: 95vw !important;

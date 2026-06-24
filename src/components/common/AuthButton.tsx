@@ -206,7 +206,7 @@ export const AuthButton = () => {
       <div className="auth-container">
         <div className="auth-user-info">
           {user.photoURL ? (
-            <img src={user.photoURL} alt={user.displayName || 'Avatar'} className="auth-avatar" />
+            <img src={user.photoURL} alt={user.displayName || 'Avatar'} className="auth-avatar" decoding="async" />
           ) : (
             <div className="auth-avatar-fallback">
               <User size={18} />
