@@ -3,7 +3,7 @@ import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../hooks/useAuth';
 import type { OrderDocument } from '../../types/order';
-import { Play, Check, AlertTriangle, ShoppingBag, Navigation, MapPin } from 'lucide-react';
+import { Play, Check, AlertTriangle, ShoppingBag, MapPin } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { geocodeAddress } from '../../utils/geocoding';

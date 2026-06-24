@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { ChefHat, CreditCard, Bell, Play, Check, Navigation, X } from 'lucide-react';
+import { ChefHat, CreditCard, Bell, Play, Check, Navigation } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderDocument } from '../../types/order';
@@ -67,7 +67,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
         status: 'cancelled',
         cancelReason: reason,
         cancelledAt: new Date().toISOString(),
-        cancelledBy: userData?.displayName || userData?.email || 'Admin',
+        cancelledBy: userData?.name || userData?.email || 'Admin',
       });
       setCancelOrderId(null);
       setCancelOrderSeq(null);
