@@ -439,7 +439,7 @@ export const DeliveryActive = () => {
 
       {activeOrder ? (
         /* ── Entrega ativa: detalhes + mapa ── */
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '2rem' }}>
+        <div className="delivery-active-grid">
 
           {/* Coluna esquerda — informações */}
           <div className="admin-card-box" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
