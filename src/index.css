@@ -184,7 +184,7 @@ body {
 .nav-menu-item:hover {
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-primary);
-  font-size: 0.88rem;
+  font-size: 0.836rem;
 }
 
 .nav-menu-item.active {
