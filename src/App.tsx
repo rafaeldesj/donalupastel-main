@@ -3,7 +3,7 @@ import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
 import { DeliveryMap } from './components/DeliveryMap';
-import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map } from 'lucide-react';
+import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 
 // Lazy-loaded components for code-splitting performance
@@ -14,6 +14,7 @@ const UserManagement = lazy(() => import('./pages/manager/UserManagement'));
 const DeliveryActive = lazy(() => import('./pages/delivery/DeliveryActive'));
 const DeliveryHistory = lazy(() => import('./pages/delivery/DeliveryHistory'));
 const OrderTracking = lazy(() => import('./pages/client/OrderTracking'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 // Premium feedback state for lazy loading
 const ViewLoader = () => (
@@ -152,11 +153,22 @@ const MainLayout = () => {
 
     // Teste de mapa — apenas developer
     if (role === 'developer') {
-      menuItems.push({ id: 'teste_mapa', label: '🗺️ Teste Mapa', icon: Map });
+      menuItems.push({ id: 'teste_mapa', label: 'Localização dos Entregadores', icon: Map });
+    }
+
+    // Configurações — visível para todos os usuários logados
+    if (user) {
+      menuItems.push({ id: 'configuracoes', label: 'Configurações', icon: Settings });
     }
   }
 
-  const getRoleLabel = (r: string) => {
+  const menuGroups = [
+  { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade'] },
+  { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada'] },
+  { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'admin', 'teste_mapa'] },
+  { label: 'Configurações', ids: ['users', 'configuracoes'] },
+];
+const getRoleLabel = (r: string) => {
     switch (r) {
       case 'developer': return 'Developer';
       case 'owner': return 'Proprietário';
@@ -217,23 +229,31 @@ const MainLayout = () => {
       <div className="middle-content-area">
         {/* 2. Left Navigation (Navegação Esquerda) */}
         <aside className="left-navigation-sidebar">
-          <div className="menu-group-label">Painéis de Acesso</div>
-          <nav className="sidebar-nav-menu">
-            {menuItems.map((item) => {
-              const IconComponent = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`nav-menu-item ${activeView === item.id ? 'active' : ''}`}
-                  onClick={() => setActiveView(item.id)}
-                >
-                  <IconComponent size={18} className="nav-icon" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+          {menuGroups.map((group) => {
+            const groupItems = menuItems.filter((item) => group.ids.includes(item.id));
+            if (groupItems.length === 0) return null;
+            return (
+              <div key={group.label} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.75rem' }}>
+                <div className="menu-group-label">{group.label}</div>
+                <nav className="sidebar-nav-menu">
+                  {groupItems.map((item) => {
+                    const IconComponent = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`nav-menu-item ${activeView === item.id ? 'active' : ''}`}
+                        onClick={() => setActiveView(item.id)}
+                      >
+                        <IconComponent size={18} className="nav-icon" />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            );
+          })}
         </aside>
 
         {/* 3. Content (Área de Conteúdo Direita) */}
@@ -249,10 +269,11 @@ const MainLayout = () => {
             {activeView === 'entrega_finalizada' && <DeliveryHistory />}
             {activeView === 'admin' && <AdminDashboard />}
             {activeView === 'users' && <UserManagement />}
+            {activeView === 'configuracoes' && <SettingsPage />}
             {activeView === 'teste_mapa' && (
               <div style={{ maxWidth: '680px', margin: '0 auto' }}>
                 <div style={{ marginBottom: '1.5rem' }}>
-                  <h2 style={{ margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>🗺️ Teste do Mapa de Entrega</h2>
+                  <h2 style={{ margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>🗺️ Localização dos Entregadores</h2>
                   <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Valide aqui a busca de endereço e a geolocalização antes de integrar ao pedido.</p>
                 </div>
                 <DeliveryMap onAddressSelect={(addr) => console.log('Endereço selecionado:', addr)} />

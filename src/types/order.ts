@@ -1,4 +1,4 @@
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'delivering' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'delivering' | 'completed' | 'cancelled' | 'aguardando_caixa' | 'pendente_pagamento';
 
 export interface OrderItem {
   id: number;
@@ -38,4 +38,6 @@ export interface OrderDocument {
   cancelReason?: string;
   cancelledAt?: string;
   cancelledBy?: string;
+  paymentMethod?: string | null;
+  changeFor?: number | null;
 }

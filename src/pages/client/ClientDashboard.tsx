@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ShoppingCart, MapPin, Plus, Minus, Trash2, Edit2, Check, X, Upload } from 'lucide-react';
 import { DeliveryMap } from '../../components/DeliveryMap';
 import type { MapAddress } from '../../components/DeliveryMap';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderItem } from '../../types/order';
 import pastelCrocante from '../../assets/pastel_crocante.png';
@@ -74,6 +74,21 @@ export const ClientDashboard = ({
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
   const [changeFor, setChangeFor] = useState('');
   const [showOrderSummary, setShowOrderSummary] = useState(false);
+
+  // PagBank Credit Card Form States
+  const [useSavedCard, setUseSavedCard] = useState(true);
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardExpiry, setCardExpiry] = useState(''); // MM/AA
+  const [cardCvv, setCardCvv] = useState('');
+  const [clientCpf, setClientCpf] = useState(userData?.cpf || '');
+  const [saveCardConsent, setSaveCardConsent] = useState(false);
+
+  useEffect(() => {
+    if (userData?.cpf) {
+      setClientCpf(userData.cpf);
+    }
+  }, [userData]);
 
   const [showPhonePrompt, setShowPhonePrompt] = useState(false);
   const [promptPhone, setPromptPhone] = useState('');
@@ -260,13 +275,94 @@ export const ClientDashboard = ({
       const dailySnap = await getDocs(qDaily);
       const dailySeq = dailySnap.size + 1;
 
+      let finalStatus = 'pending';
+
+      if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
+        finalStatus = 'aguardando_caixa';
+      } else if (paymentMethod === 'credito') {
+        // FLUXO DE PAGAMENTO ONLINE DO PAGBANK
+        const isUsingSavedCard = useSavedCard && !!userData?.pagbank_card_token;
+        let encryptedCardToken = '';
+
+        if (!isUsingSavedCard) {
+          if (!(window as any).PagSeguro) {
+            throw new Error('O SDK do PagBank não pôde ser carregado. Por favor, recarregue a página.');
+          }
+
+          if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !clientCpf) {
+            throw new Error('Por favor, preencha todos os campos do cartão e o CPF.');
+          }
+
+          const expiryParts = cardExpiry.split('/');
+          if (expiryParts.length !== 2) {
+            throw new Error('Formato da validade inválido (use MM/AA).');
+          }
+          const expMonth = expiryParts[0].trim();
+          let expYear = expiryParts[1].trim();
+          if (expYear.length === 2) {
+            expYear = '20' + expYear;
+          }
+
+          const encryptionResult = (window as any).PagSeguro.encryptCard({
+            publicKey: import.meta.env.VITE_PAGBANK_PUBLIC_KEY || 'MOCK_PUBLIC_KEY_PAGBANK_123456',
+            holder: cardHolder,
+            number: cardNumber.replace(/\s/g, ''),
+            expMonth: expMonth,
+            expYear: expYear,
+            cvv: cardCvv
+          });
+
+          if (encryptionResult.hasErrors) {
+            const errorMsg = encryptionResult.errors?.[0]?.message || 'Dados do cartão inválidos.';
+            throw new Error(errorMsg);
+          }
+
+          encryptedCardToken = encryptionResult.encryptedCard;
+        }
+
+        const response = await fetch('/api/pagamentos/process-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            encryptedCard: isUsingSavedCard ? undefined : encryptedCardToken,
+            cpf: isUsingSavedCard ? undefined : clientCpf.replace(/\D/g, ''),
+            saveCard: isUsingSavedCard ? false : saveCardConsent,
+            orderTotal: cartTotal,
+            clientName: user?.displayName || user?.email || 'Cliente',
+            clientEmail: user?.email || '',
+            useSavedCard: isUsingSavedCard,
+            savedCustomerId: userData?.pagbank_customer_id || undefined,
+            savedCardToken: userData?.pagbank_card_token || undefined
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Falha no pagamento do PagBank.');
+        }
+
+        if (!isUsingSavedCard && saveCardConsent && result.card) {
+          const userDocRef = doc(db, 'users', user!.uid);
+          await updateDoc(userDocRef, {
+            cpf: clientCpf.replace(/\D/g, ''),
+            pagbank_customer_id: result.card.customer_id,
+            pagbank_card_token: result.card.card_token,
+            pagbank_card_brand: result.card.brand,
+            pagbank_card_last_digits: result.card.last_digits,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        finalStatus = 'preparing';
+      }
+
       const orderData: any = {
         clientUid: user?.uid || '',
         clientName: user?.displayName || user?.email || 'Cliente Anônimo',
         clientPhone: userData?.phoneNumber || '',
         items: cart,
         total: cartTotal,
-        status: 'pending',
+        status: finalStatus,
         createdAt: new Date().toISOString(),
         orderType,
         paymentMethod,
@@ -291,10 +387,15 @@ export const ClientDashboard = ({
       setPaymentMethod('pix');
       setChangeFor('');
       setOrderType('pickup');
+      setCardNumber('');
+      setCardHolder('');
+      setCardExpiry('');
+      setCardCvv('');
+      setSaveCardConsent(false);
       setOrderPlaced(true);
     } catch (err: any) {
       console.error(err);
-      setError('Erro ao enviar pedido para a cozinha. Tente novamente.');
+      setError(err.message || 'Erro ao enviar pedido para a cozinha. Tente novamente.');
     } finally {
       setSubmitting(false);
     }
@@ -774,6 +875,117 @@ export const ClientDashboard = ({
                     min="0"
                     step="0.01"
                   />
+                </div>
+              )}
+
+              {paymentMethod === 'credito' && (
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem' }}>
+                  {userData?.pagbank_card_token ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: useSavedCard ? '0' : '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        id="use-saved-card"
+                        checked={useSavedCard}
+                        onChange={(e) => setUseSavedCard(e.target.checked)}
+                        style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)' }}
+                      />
+                      <label htmlFor="use-saved-card" style={{ fontSize: '0.9rem', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+                        Usar cartão de crédito salvo ({userData.pagbank_card_brand?.toUpperCase()} final **** {userData.pagbank_card_last_digits})
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {(!userData?.pagbank_card_token || !useSavedCard) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div className="input-group">
+                        <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Número do Cartão</label>
+                        <input
+                          type="text"
+                          className="pastel-edit-input"
+                          placeholder="0000 0000 0000 0000"
+                          value={cardNumber}
+                          onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 '))}
+                          maxLength={19}
+                          required={paymentMethod === 'credito' && !useSavedCard}
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Nome Impresso no Cartão</label>
+                        <input
+                          type="text"
+                          className="pastel-edit-input"
+                          placeholder="NOME DO TITULAR"
+                          value={cardHolder}
+                          onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                          required={paymentMethod === 'credito' && !useSavedCard}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                        <div className="input-group">
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Validade (MM/AA)</label>
+                          <input
+                            type="text"
+                            className="pastel-edit-input"
+                            placeholder="MM/AA"
+                            value={cardExpiry}
+                            onChange={(e) => {
+                              let v = e.target.value.replace(/\D/g, '');
+                              if (v.length > 2) {
+                                v = v.substring(0, 2) + '/' + v.substring(2, 4);
+                              }
+                              setCardExpiry(v);
+                            }}
+                            maxLength={5}
+                            required={paymentMethod === 'credito' && !useSavedCard}
+                          />
+                        </div>
+                        <div className="input-group">
+                          <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>CVV</label>
+                          <input
+                            type="text"
+                            className="pastel-edit-input"
+                            placeholder="123"
+                            value={cardCvv}
+                            onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
+                            maxLength={4}
+                            required={paymentMethod === 'credito' && !useSavedCard}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="input-group">
+                        <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>CPF do Titular</label>
+                        <input
+                          type="text"
+                          className="pastel-edit-input"
+                          placeholder="000.000.000-00"
+                          value={clientCpf}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(/\D/g, '');
+                            if (v.length <= 11) {
+                              v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+                            }
+                            setClientCpf(v);
+                          }}
+                          maxLength={14}
+                          required={paymentMethod === 'credito' && !useSavedCard}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                        <input
+                          type="checkbox"
+                          id="save-card-consent"
+                          checked={saveCardConsent}
+                          onChange={(e) => setSaveCardConsent(e.target.checked)}
+                          style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)' }}
+                        />
+                        <label htmlFor="save-card-consent" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                          salvar meus dados de pagamento para usar novamente na proxima vez
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

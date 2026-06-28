@@ -27,4 +27,9 @@ export interface UserDocument {
   staffFunctions?: StaffFunctions;
   clientAddress?: UserAddress;
   tempPassword?: string;
+  cpf?: string;
+  pagbank_customer_id?: string;
+  pagbank_card_token?: string;
+  pagbank_card_brand?: string;
+  pagbank_card_last_digits?: string;
 }

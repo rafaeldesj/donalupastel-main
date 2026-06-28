@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ChefHat, CreditCard, Bell, Play, Check, Navigation } from 'lucide-react';
-import { collection, query, onSnapshot, doc, updateDoc, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderDocument } from '../../types/order';
 
@@ -20,6 +20,53 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const [cancelOrderSeq, setCancelOrderSeq] = useState<number | null>(null);
   const [cancelReasonOption, setCancelReasonOption] = useState<string>('Cliente desistiu do pedido');
   const [customCancelReason, setCustomCancelReason] = useState<string>('');
+
+  const [reprovingOrderId, setReprovingOrderId] = useState<string | null>(null);
+  const [reprovingOrderSeq, setReprovingOrderSeq] = useState<number | null>(null);
+
+  const handleApproveCashierOrder = async (order: OrderDocument) => {
+    if (!order.id) return;
+    try {
+      const orderDocRef = doc(db, 'orders', order.id);
+      await updateDoc(orderDocRef, {
+        status: 'preparing'
+      });
+
+      await addDoc(collection(db, 'transactions'), {
+        orderId: order.id,
+        clientName: order.clientName,
+        clientUid: order.clientUid,
+        total: order.total,
+        paymentMethod: order.paymentMethod,
+        type: 'baixa_manual',
+        approvedBy: userData?.name || userData?.email || 'Caixa',
+        createdAt: new Date().toISOString()
+      });
+
+      alert('Baixa do pedido aprovada com sucesso! O pedido foi enviado para a cozinha.');
+    } catch (err) {
+      console.error('Erro ao aprovar baixa do caixa:', err);
+      alert('Erro ao aprovar baixa do caixa. Tente novamente.');
+    }
+  };
+
+  const handleReproveCashierOrder = async () => {
+    if (!reprovingOrderId) return;
+    try {
+      const orderDocRef = doc(db, 'orders', reprovingOrderId);
+      await updateDoc(orderDocRef, {
+        status: 'pending',
+        paymentMethod: null,
+        changeFor: null
+      });
+      setReprovingOrderId(null);
+      setReprovingOrderSeq(null);
+      alert('Pedido reprovado com sucesso. O cliente poderá selecionar um novo método de pagamento no app.');
+    } catch (err) {
+      console.error('Erro ao reprovar pedido no caixa:', err);
+      alert('Erro ao reprovar pedido. Tente novamente.');
+    }
+  };
 
   // Escuta pedidos em tempo real no Firestore
   useEffect(() => {
@@ -84,6 +131,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
   const attendingOrders = orders.filter(o => o.status === 'ready');
   const cashierOrders = orders.filter(o => o.status === 'ready');
+  const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento');
   const deliveryOrders = orders.filter(o => (o.status === 'ready' || o.status === 'delivering') && o.address);
 
   const hasAnyFunction = staff && (staff.cook || staff.attendant || staff.cashier || staff.delivery);
@@ -256,43 +304,116 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
 
           {/* Fila do Caixa */}
           {filter === 'cashier' && isAuthorized('cashier') && (
-            <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-              <div className="section-title">
-                <CreditCard className="section-icon text-emerald" size={24} />
-                <h3 style={{ fontSize: '1.4rem' }}>Fila do Caixa ({cashierOrders.length} aguardando)</h3>
-              </div>
-              <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
-                {cashierOrders.length === 0 ? (
-                  <p style={{ color: 'var(--text-secondary)', padding: '1rem', gridColumn: '1 / -1', textAlign: 'center' }}>Sem recebimentos pendentes.</p>
-                ) : (
-                  cashierOrders.map((order) => (
-                    <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
-                      <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                          <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
-                          <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
-                            R$ {order.total.toFixed(2).replace('.', ',')}
-                          </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
+              
+              {/* Seção 1: Aguardando Avaliação no Caixa */}
+              <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+                <div className="section-title">
+                  <CreditCard className="section-icon text-emerald" size={24} />
+                  <h3 style={{ fontSize: '1.4rem' }}>Aguardando Avaliação no Caixa ({cashierEvaluationOrders.length} pendentes)</h3>
+                </div>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
+                  Pedidos com pagamento físico (dinheiro ou cartão na entrega/retirada) que aguardam baixa manual.
+                </p>
+                <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                  {cashierEvaluationOrders.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                      Nenhum pedido aguardando avaliação no momento.
+                    </p>
+                  ) : (
+                    cashierEvaluationOrders.map((order) => (
+                      <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                        <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                            <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
+                            <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
+                              R$ {order.total.toFixed(2).replace('.', ',')}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
+                            {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                            <div>Tipo: <strong style={{ color: '#fff' }}>{order.address ? '🛵 Entrega' : '🏪 Retirada'}</strong></div>
+                            <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : '💴 Cartão (maquininha)'}</strong></div>
+                            {order.paymentMethod === 'dinheiro' && order.changeFor && (
+                              <div style={{ color: '#ef4444' }}>Troco para: <strong>R$ {order.changeFor.toFixed(2).replace('.', ',')}</strong> (Troco: R$ {(order.changeFor - order.total).toFixed(2).replace('.', ',')})</div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                          <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
-                          {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                        <div style={{ margin: '0.75rem 0', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.5rem' }}>
+                          {order.items.map((item, index) => (
+                            <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name}</p>
+                          ))}
                         </div>
-                      </div>
-                      <div className="order-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
-                        <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
-                          Confirmar Pagamento e Finalizar
-                        </button>
-                        {isAuthorizedCancel && (
-                          <button type="button" onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} className="btn-small btn-danger" style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
-                            Cancelar Pedido
+                        <div className="order-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+                          <button 
+                            type="button" 
+                            onClick={() => handleApproveCashierOrder(order)} 
+                            className="btn-small btn-success" 
+                            style={{ width: '100%', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
+                          >
+                            ✓ Aprovar
                           </button>
-                        )}
+                          <button 
+                            type="button" 
+                            onClick={() => { if (order.id) { setReprovingOrderId(order.id); setReprovingOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} 
+                            className="btn-small btn-danger" 
+                            style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
+                          >
+                            ✗ Reprovar
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
+
+              {/* Seção 2: Fila de Finalização (Pedidos Prontos) */}
+              <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+                <div className="section-title">
+                  <Bell className="section-icon text-blue" size={24} />
+                  <h3 style={{ fontSize: '1.4rem' }}>Finalização de Pedidos Prontos ({cashierOrders.length} aguardando)</h3>
+                </div>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
+                  Pedidos finalizados na cozinha que aguardam a confirmação de entrega ao cliente.
+                </p>
+                <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                  {cashierOrders.length === 0 ? (
+                    <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                      Nenhum recebimento pendente.
+                    </p>
+                  ) : (
+                    cashierOrders.map((order) => (
+                      <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                        <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                            <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
+                            <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
+                              R$ {order.total.toFixed(2).replace('.', ',')}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
+                            {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                          </div>
+                        </div>
+                        <div className="order-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
+                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
+                            Confirmar Entrega e Finalizar
+                          </button>
+                          {isAuthorizedCancel && (
+                            <button type="button" onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} className="btn-small btn-danger" style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
+                              Cancelar Pedido
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -491,6 +612,84 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                 onMouseLeave={(e) => e.currentTarget.style.background = '#dc2626'}
               >
                 Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reprovação de Pedido no Caixa */}
+      {reprovingOrderId && (
+        <div
+          className="lightbox-overlay"
+          onClick={() => { setReprovingOrderId(null); setReprovingOrderSeq(null); }}
+          style={{ zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '20px',
+              padding: '2rem',
+              width: '90%',
+              maxWidth: '450px',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.7)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.2rem',
+              position: 'relative'
+            }}
+          >
+            <div style={{ textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1rem' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '0.3rem' }}>❌</div>
+              <h2 style={{ margin: 0, fontSize: '1.35rem', color: '#ef4444' }}>Reprovar Pedido no Caixa</h2>
+              <p style={{ margin: '0.3rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                Confirma a reprovação do **Pedido {reprovingOrderSeq}**?
+              </p>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', margin: 0, lineHeight: '1.5' }}>
+              Ao reprovar a baixa manual, o pedido voltará para o status de pendência original de pagamento e o método de pagamento será reiniciado para nulo. Isso permitirá que o cliente tente efetuar o pagamento novamente usando outro meio (ex: cartão online ou Pix).
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => { setReprovingOrderId(null); setReprovingOrderSeq(null); }}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.04)',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '0.9rem'
+                }}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={handleReproveCashierOrder}
+                style={{
+                  flex: 1.5,
+                  padding: '0.75rem',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#b91c1c'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#dc2626'}
+              >
+                Confirmar Reprovação
               </button>
             </div>
           </div>

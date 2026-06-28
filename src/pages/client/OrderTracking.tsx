@@ -182,6 +182,318 @@ const OrderMap = ({ orderId, address, deliveryCoords, clientCoords }: OrderMapPr
   );
 };
 
+
+interface PaymentRetryProps {
+  order: OrderDocument;
+  userData: any;
+}
+
+const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
+  const [changeFor, setChangeFor] = useState('');
+  
+  // Card states
+  const [useSavedCard, setUseSavedCard] = useState(true);
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [clientCpf, setClientCpf] = useState(userData?.cpf || '');
+  const [saveCardConsent, setSaveCardConsent] = useState(false);
+  
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (userData?.cpf) {
+      setClientCpf(userData.cpf);
+    }
+  }, [userData]);
+
+  const handleRetryPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      let finalStatus = 'pending';
+      
+      if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
+        finalStatus = 'aguardando_caixa';
+      } else if (paymentMethod === 'credito') {
+        const isUsingSavedCard = useSavedCard && !!userData?.pagbank_card_token;
+        let encryptedCardToken = '';
+
+        if (!isUsingSavedCard) {
+          if (!(window as any).PagSeguro) {
+            throw new Error('O SDK do PagBank não pôde ser carregado. Por favor, recarregue a página.');
+          }
+
+          if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !clientCpf) {
+            throw new Error('Por favor, preencha todos os campos do cartão e o CPF.');
+          }
+
+          const expiryParts = cardExpiry.split('/');
+          if (expiryParts.length !== 2) {
+            throw new Error('Formato da validade inválido (use MM/AA).');
+          }
+          const expMonth = expiryParts[0].trim();
+          let expYear = expiryParts[1].trim();
+          if (expYear.length === 2) {
+            expYear = '20' + expYear;
+          }
+
+          const encryptionResult = (window as any).PagSeguro.encryptCard({
+            publicKey: import.meta.env.VITE_PAGBANK_PUBLIC_KEY || 'MOCK_PUBLIC_KEY_PAGBANK_123456',
+            holder: cardHolder,
+            number: cardNumber.replace(/\s/g, ''),
+            expMonth: expMonth,
+            expYear: expYear,
+            cvv: cardCvv
+          });
+
+          if (encryptionResult.hasErrors) {
+            const errorMsg = encryptionResult.errors?.[0]?.message || 'Dados do cartão inválidos.';
+            throw new Error(errorMsg);
+          }
+
+          encryptedCardToken = encryptionResult.encryptedCard;
+        }
+
+        const response = await fetch('/api/pagamentos/process-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            encryptedCard: isUsingSavedCard ? undefined : encryptedCardToken,
+            cpf: isUsingSavedCard ? undefined : clientCpf.replace(/\D/g, ''),
+            saveCard: isUsingSavedCard ? false : saveCardConsent,
+            orderTotal: order.total,
+            clientName: userData?.name || userData?.email || 'Cliente',
+            clientEmail: userData?.email || '',
+            useSavedCard: isUsingSavedCard,
+            savedCustomerId: userData?.pagbank_customer_id || undefined,
+            savedCardToken: userData?.pagbank_card_token || undefined
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Falha no pagamento do PagBank.');
+        }
+
+        if (!isUsingSavedCard && saveCardConsent && result.card) {
+          const userDocRef = doc(db, 'users', userData.uid);
+          await updateDoc(userDocRef, {
+            cpf: clientCpf.replace(/\D/g, ''),
+            pagbank_customer_id: result.card.customer_id,
+            pagbank_card_token: result.card.card_token,
+            pagbank_card_brand: result.card.brand,
+            pagbank_card_last_digits: result.card.last_digits,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        finalStatus = 'preparing';
+      }
+
+      const orderDocRef = doc(db, 'orders', order.id!);
+      await updateDoc(orderDocRef, {
+        status: finalStatus,
+        paymentMethod: paymentMethod,
+        changeFor: paymentMethod === 'dinheiro' && changeFor ? parseFloat(changeFor.replace(',', '.')) : null,
+      });
+
+      alert('Pagamento atualizado com sucesso! O pedido foi enviado.');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Erro ao processar o pagamento. Tente novamente.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '1rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '16px', padding: '1.25rem', textAlign: 'left' }}>
+      <h4 style={{ margin: '0 0 0.5rem 0', color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '1rem' }}>
+        ⚠️ Pagamento Pendente / Recusado
+      </h4>
+      <p style={{ margin: '0 0 1rem 0', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+        Por favor, selecione outra forma de pagamento abaixo para prosseguir com seu pedido de <strong>R$ {order.total.toFixed(2).replace('.', ',')}</strong>.
+      </p>
+
+      {error && <div className="auth-error-message" style={{ marginBottom: '1rem' }}>{error}</div>}
+
+      <form onSubmit={handleRetryPayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+          {([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setPaymentMethod(val)}
+              style={{
+                padding: '0.6rem 0.5rem',
+                borderRadius: '10px',
+                border: paymentMethod === val ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.08)',
+                background: paymentMethod === val ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.02)',
+                color: paymentMethod === val ? 'var(--primary-gold)' : 'var(--text-secondary)',
+                fontWeight: paymentMethod === val ? 700 : 400,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {paymentMethod === 'dinheiro' && (
+          <div style={{ marginTop: '0.3rem' }}>
+            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+              Troco para quanto? (opcional)
+            </label>
+            <input
+              type="number"
+              className="pastel-edit-input"
+              style={{ marginBottom: 0, maxWidth: '180px' }}
+              placeholder="Ex: 50,00"
+              value={changeFor}
+              onChange={(e) => setChangeFor(e.target.value)}
+              min="0"
+              step="0.01"
+            />
+          </div>
+        )}
+
+        {paymentMethod === 'credito' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem', marginTop: '0.25rem' }}>
+            {userData?.pagbank_card_token ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: useSavedCard ? '0' : '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  id={`use-saved-card-retry-${order.id}`}
+                  checked={useSavedCard}
+                  onChange={(e) => setUseSavedCard(e.target.checked)}
+                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)' }}
+                />
+                <label htmlFor={`use-saved-card-retry-${order.id}`} style={{ fontSize: '0.9rem', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>
+                  Usar cartão salvo ({userData.pagbank_card_brand?.toUpperCase()} final **** {userData.pagbank_card_last_digits})
+                </label>
+              </div>
+            ) : null}
+
+            {(!userData?.pagbank_card_token || !useSavedCard) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div className="input-group">
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Número do Cartão</label>
+                  <input
+                    type="text"
+                    className="pastel-edit-input"
+                    placeholder="0000 0000 0000 0000"
+                    value={cardNumber}
+                    onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 '))}
+                    maxLength={19}
+                    required={paymentMethod === 'credito' && !useSavedCard}
+                  />
+                </div>
+                <div className="input-group">
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Nome Impresso no Cartão</label>
+                  <input
+                    type="text"
+                    className="pastel-edit-input"
+                    placeholder="NOME DO TITULAR"
+                    value={cardHolder}
+                    onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
+                    required={paymentMethod === 'credito' && !useSavedCard}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div className="input-group">
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Validade (MM/AA)</label>
+                    <input
+                      type="text"
+                      className="pastel-edit-input"
+                      placeholder="MM/AA"
+                      value={cardExpiry}
+                      onChange={(e) => {
+                        let v = e.target.value.replace(/\D/g, '');
+                        if (v.length > 2) {
+                          v = v.substring(0, 2) + '/' + v.substring(2, 4);
+                        }
+                        setCardExpiry(v);
+                      }}
+                      maxLength={5}
+                      required={paymentMethod === 'credito' && !useSavedCard}
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>CVV</label>
+                    <input
+                      type="text"
+                      className="pastel-edit-input"
+                      placeholder="123"
+                      value={cardCvv}
+                      onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
+                      maxLength={4}
+                      required={paymentMethod === 'credito' && !useSavedCard}
+                    />
+                  </div>
+                </div>
+                
+                <div className="input-group">
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>CPF do Titular</label>
+                  <input
+                    type="text"
+                    className="pastel-edit-input"
+                    placeholder="000.000.000-00"
+                    value={clientCpf}
+                    onChange={(e) => {
+                      let v = e.target.value.replace(/\D/g, '');
+                      if (v.length <= 11) {
+                        v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+                      }
+                      setClientCpf(v);
+                    }}
+                    maxLength={14}
+                    required={paymentMethod === 'credito' && !useSavedCard}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <input
+                    type="checkbox"
+                    id={`save-card-consent-retry-${order.id}`}
+                    checked={saveCardConsent}
+                    onChange={(e) => setSaveCardConsent(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)' }}
+                  />
+                  <label htmlFor={`save-card-consent-retry-${order.id}`} style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                    salvar meus dados de pagamento para usar novamente na proxima vez
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="auth-btn auth-btn-login"
+          style={{ marginTop: '0.5rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 700 }}
+        >
+          {submitting ? (
+            <><span className="spinner" /><span>Processando pagamento...</span></>
+          ) : (
+            <span>Tentar Pagamento Novamente</span>
+          )}
+        </button>
+      </form>
+    </div>
+  );
+};
+
 export const OrderTracking = () => {
   const { user, userData } = useAuth();
   const [orders, setOrders] = useState<OrderDocument[]>([]);
@@ -448,33 +760,37 @@ export const OrderTracking = () => {
                     </div>
                   </div>
 
-                  {/* Stepper de Status */}
-                  <div className="stepper-container">
-                    <div className="stepper-line">
-                      <div className="stepper-line-progress" style={{ width: progressWidth }} />
-                    </div>
+                  {/* Stepper de Status ou Re-pagamento */}
+                  {!order.paymentMethod ? (
+                    <OrderPaymentRetry order={order} userData={userData} />
+                  ) : (
+                    <div className="stepper-container">
+                      <div className="stepper-line">
+                        <div className="stepper-line-progress" style={{ width: progressWidth }} />
+                      </div>
 
-                    {steps.map((step, idx) => {
-                      const StepIcon = step.icon;
-                      const isCompleted = idx < activeIndex;
-                      const isActive = idx === activeIndex;
-                      
-                      let stateClass = 'upcoming';
-                      if (isCompleted) stateClass = 'completed';
-                      else if (isActive) stateClass = 'active';
+                      {steps.map((step, idx) => {
+                        const StepIcon = step.icon;
+                        const isCompleted = idx < activeIndex;
+                        const isActive = idx === activeIndex;
+                        
+                        let stateClass = 'upcoming';
+                        if (isCompleted) stateClass = 'completed';
+                        else if (isActive) stateClass = 'active';
 
-                      return (
-                        <div key={idx} className="stepper-step">
-                          <div className={`step-icon-wrapper ${stateClass}`}>
-                            <StepIcon size={16} />
+                        return (
+                          <div key={idx} className="stepper-step">
+                            <div className={`step-icon-wrapper ${stateClass}`}>
+                              <StepIcon size={16} />
+                            </div>
+                            <span className={`step-label ${stateClass === 'completed' ? 'completed' : stateClass === 'active' ? 'active' : ''}`}>
+                              {step.label}
+                            </span>
                           </div>
-                          <span className={`step-label ${stateClass === 'completed' ? 'completed' : stateClass === 'active' ? 'active' : ''}`}>
-                            {step.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Detalhes de Endereço/Retirada */}
                   <div style={{ background: 'rgba(0,0,0,0.15)', padding: '0.85rem 1rem', borderRadius: '10px', marginTop: '1.5rem', fontSize: '0.9rem' }}>

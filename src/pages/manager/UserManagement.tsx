@@ -4,8 +4,11 @@ import { db, auth } from '../../config/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import type { UserDocument, UserRole, StaffFunctions } from '../../types/user';
 import { Plus, Edit2, Trash2, X, Search, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { logAuditAction } from '../../utils/audit';
 
 export const UserManagement = () => {
+  const { user, userData } = useAuth();
   const [users, setUsers] = useState<UserDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -85,10 +88,23 @@ export const UserManagement = () => {
 
   const handleDeleteUser = async (userId: string) => {
     if (!window.confirm('Tem certeza de que deseja excluir este usuário do sistema?')) return;
+    const targetUser = users.find((u) => u.uid === userId);
     
     try {
       await deleteDoc(doc(db, 'users', userId));
       setSuccess('Usuário excluído com sucesso!');
+      
+      if (user) {
+        await logAuditAction({
+          userId: user.uid,
+          userEmail: user.email || '',
+          userName: userData?.name || user.displayName || 'Administrador',
+          actionType: 'DELETE_USER',
+          title: 'Exclusão de Usuário',
+          description: `O administrador excluiu a conta do usuário "${targetUser?.name || 'Desconhecido'}" (E-mail: "${targetUser?.email || ''}", Papel: "${targetUser?.role || ''}").`
+        });
+      }
+      
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       console.error(err);
@@ -112,6 +128,18 @@ export const UserManagement = () => {
         tempPassword: tempPassword.trim()
       });
       setSuccess(`Senha provisória salva com sucesso para ${resetUser.name}!`);
+      
+      if (user) {
+        await logAuditAction({
+          userId: user.uid,
+          userEmail: user.email || '',
+          userName: userData?.name || user.displayName || 'Administrador',
+          actionType: 'RESET_PASSWORD',
+          title: 'Redefinição de Senha',
+          description: `O administrador definiu uma nova senha provisória para o usuário "${resetUser.name}" (E-mail: "${resetUser.email}").`
+        });
+      }
+
       setResetUser(null);
       setTimeout(() => setSuccess(null), 4000);
     } catch (err: any) {
@@ -163,6 +191,17 @@ export const UserManagement = () => {
         // Atualiza usuário existente no Firestore
         await updateDoc(doc(db, 'users', editUser.uid), payload as any);
         setSuccess('Usuário atualizado com sucesso!');
+        
+        if (user) {
+          await logAuditAction({
+            userId: user.uid,
+            userEmail: user.email || '',
+            userName: userData?.name || user.displayName || 'Administrador',
+            actionType: 'UPDATE_USER',
+            title: 'Edição de Usuário',
+            description: `O administrador atualizou os dados do usuário "${name}" (E-mail: "${email.trim().toLowerCase()}", Papel: "${role}").`
+          });
+        }
       } else {
         // Pré-cadastro do usuário (gerará um ID temporário aleatório no Firestore)
         const docRef = await addDoc(collection(db, 'users'), {
@@ -174,6 +213,17 @@ export const UserManagement = () => {
         // Atualiza o campo uid do documento com o próprio ID do documento para manter a consistência
         await updateDoc(doc(db, 'users', docRef.id), { uid: docRef.id });
         setSuccess('Usuário pré-cadastrado! Ele terá acesso ao fazer login com este e-mail.');
+        
+        if (user) {
+          await logAuditAction({
+            userId: user.uid,
+            userEmail: user.email || '',
+            userName: userData?.name || user.displayName || 'Administrador',
+            actionType: 'CREATE_USER',
+            title: 'Pré-cadastro de Usuário',
+            description: `O administrador pré-cadastrou o usuário "${name}" (E-mail: "${email.trim().toLowerCase()}", Papel: "${role}").`
+          });
+        }
       }
       
       setShowForm(false);
