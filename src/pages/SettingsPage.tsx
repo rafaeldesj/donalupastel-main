@@ -230,7 +230,7 @@ export const SettingsPage = () => {
 
   const handleLoginEstablishment = () => {
     const devClientId = storeConfig.devClientId || '87878437306';
-    const redirectUri = encodeURIComponent(window.location.origin);
+    const redirectUri = encodeURIComponent(window.location.origin + '/');
     const oauthUrl = `https://auth.mercadopago.com/authorization?client_id=${devClientId}&response_type=code&platform_id=mp&redirect_uri=${redirectUri}`;
     
     // Abre a janela do Mercado Pago em outra aba
