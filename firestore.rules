@@ -84,5 +84,18 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Regras para a coleção de logs de auditoria (audit_logs)
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null;
+    }
+
+    // Regras para a coleção de transações (transactions)
+    match /transactions/{transactionId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isAdmin();
+    }
   }
 }
