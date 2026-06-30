@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ShoppingCart, MapPin, Plus, Minus, Trash2, Edit2, Check, X, Upload } from 'lucide-react';
 import { DeliveryMap } from '../../components/DeliveryMap';
 import type { MapAddress } from '../../components/DeliveryMap';
-import { collection, addDoc, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, updateDoc, getDoc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderItem } from '../../types/order';
 import pastelCrocante from '../../assets/pastel_crocante.png';
@@ -39,17 +39,7 @@ export const ClientDashboard = ({
   ];
 
   // Estados
-  const [pastels, setPastels] = useState(() => {
-    const saved = localStorage.getItem('donalu_pastels');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Erro ao carregar cardápio salvo:", e);
-      }
-    }
-    return defaultPastels;
-  });
+  const [pastels, setPastels] = useState<any[]>(defaultPastels);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
@@ -106,6 +96,54 @@ export const ClientDashboard = ({
   }, []);
 
   useEffect(() => {
+    const q = query(collection(db, 'products'));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      if (snapshot.empty) {
+        console.log("Cardápio no Firestore está vazio. Semeando dados padrão...");
+        for (const item of defaultPastels) {
+          const docId = item.id.toString();
+          try {
+            await setDoc(doc(db, 'products', docId), {
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              description: item.description,
+              image: item.image || ''
+            });
+          } catch (err) {
+            console.error("Erro ao semear produto:", item.name, err);
+          }
+        }
+      } else {
+        const itemsList: any[] = [];
+        snapshot.forEach((docSnap) => {
+          itemsList.push(docSnap.data());
+        });
+        itemsList.sort((a, b) => b.id - a.id);
+
+        if (isNewItem !== null) {
+          const alreadyInList = itemsList.some(item => item.id === isNewItem);
+          if (!alreadyInList) {
+            const tempNewItem = {
+              id: isNewItem,
+              name: editName,
+              price: editPrice,
+              description: editDescription,
+              image: editImage
+            };
+            setPastels([tempNewItem, ...itemsList]);
+            return;
+          }
+        }
+
+        setPastels(itemsList);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isNewItem, editName, editPrice, editDescription, editImage]);
+
+  useEffect(() => {
     if (userData?.cpf) {
       setClientCpf(userData.cpf);
     }
@@ -140,21 +178,27 @@ export const ClientDashboard = ({
     setEditImage(pastel.image || '');
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editName.trim()) {
       alert("O nome do pastel não pode ser vazio.");
       return;
     }
-    const updatedPastels = pastels.map((p: any) => 
-      p.id === editingId 
-        ? { ...p, name: editName, description: editDescription, price: editPrice, image: editImage }
-        : p
-    );
-    setPastels(updatedPastels);
-    localStorage.setItem('donalu_pastels', JSON.stringify(updatedPastels));
-    setEditingId(null);
-    if (editingId === isNewItem) {
-      setIsNewItem(null);
+    try {
+      const docId = editingId!.toString();
+      await setDoc(doc(db, 'products', docId), {
+        id: editingId,
+        name: editName,
+        description: editDescription,
+        price: editPrice,
+        image: editImage
+      });
+      setEditingId(null);
+      if (editingId === isNewItem) {
+        setIsNewItem(null);
+      }
+    } catch (err) {
+      console.error("Erro ao salvar item no Firestore:", err);
+      alert("Erro ao salvar o item no cardápio. Verifique suas permissões.");
     }
   };
 
@@ -164,6 +208,17 @@ export const ClientDashboard = ({
       setIsNewItem(null);
     }
     setEditingId(null);
+  };
+
+  const handleDeleteItem = async (id: number) => {
+    if (window.confirm("Tem certeza de que deseja excluir este item do cardápio?")) {
+      try {
+        await deleteDoc(doc(db, 'products', id.toString()));
+      } catch (err) {
+        console.error("Erro ao excluir item do Firestore:", err);
+        alert("Erro ao excluir o item do cardápio. Verifique suas permissões.");
+      }
+    }
   };
 
   const handleAddNewItem = () => {
@@ -814,9 +869,14 @@ export const ClientDashboard = ({
                     // Botões para editar / comprar
                     <>
                       {canEdit && (
-                        <button type="button" onClick={() => startEdit(pastel)} className="pastel-action-btn edit-btn" title="Editar Pastel" style={{ marginBottom: '0.5rem' }}>
-                          <Edit2 size={16} />
-                        </button>
+                        <>
+                          <button type="button" onClick={() => startEdit(pastel)} className="pastel-action-btn edit-btn" title="Editar Pastel" style={{ marginBottom: '0.5rem' }}>
+                            <Edit2 size={16} />
+                          </button>
+                          <button type="button" onClick={() => handleDeleteItem(pastel.id)} className="pastel-action-btn delete-btn" title="Excluir Pastel" style={{ marginBottom: '0.5rem' }}>
+                            <Trash2 size={16} />
+                          </button>
+                        </>
                       )}
                       <button type="button" onClick={() => addToCart(pastel)} className="add-to-cart-btn" aria-label={`Adicionar ${pastel.name} ao carrinho`}>
                         <ShoppingCart size={18} />

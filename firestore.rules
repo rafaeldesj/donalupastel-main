@@ -79,6 +79,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Regras para a coleção de produtos (products)
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Regras para a coleção de configurações (settings)
     match /settings/{settingsId} {
       allow read: if true;

@@ -1508,6 +1508,18 @@ select:focus {
   background: rgba(239, 68, 68, 0.2);
 }
 
+.pastel-action-btn.delete-btn {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.pastel-action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff6b6b;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
 /* Lightbox Modal para fotos */
 .lightbox-overlay {
   position: fixed;
