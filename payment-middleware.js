@@ -179,3 +179,144 @@ export const processPaymentMiddleware = async (req, res) => {
     }
   });
 };
+
+export const createPixMiddleware = async (req, res) => {
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk.toString();
+  });
+  
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      const { token, amount, email, name, cpf } = data;
+      
+      const isMock = !token || token === 'mock' || token === '' || token === 'null' || token === 'undefined';
+      
+      if (isMock) {
+        console.log('[Mercado Pago Pix] Rodando em modo MOCK.');
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        const mockPaymentId = 'PAY_MOCK_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+        
+        if (!global.mockPayments) {
+          global.mockPayments = {};
+        }
+        global.mockPayments[mockPaymentId] = {
+          status: 'pending',
+          createdAt: Date.now()
+        };
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: true,
+          paymentId: mockPaymentId,
+          qrCode: '00020101021226870014br.gov.bcb.pix2565qr-mock-code-dona-lu-pastelaria-1234567890',
+          qrCodeBase64: '',
+          status: 'pending'
+        }));
+      }
+      
+      // Chamada real ao Mercado Pago
+      const mpUrl = 'https://api.mercadopago.com/v1/payments';
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': 'PIX_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)
+      };
+      
+      const firstName = name.split(' ')[0] || 'Cliente';
+      const lastName = name.split(' ').slice(1).join(' ') || 'Dona Lu';
+      
+      const payload = {
+        transaction_amount: parseFloat(amount),
+        description: 'Pedido Dona Lu Pastelaria',
+        payment_method_id: 'pix',
+        payer: {
+          email: email || 'cliente@email.com',
+          first_name: firstName,
+          last_name: lastName,
+          identification: {
+            type: 'CPF',
+            number: cpf.replace(/\D/g, '') || '45678912364'
+          }
+        }
+      };
+      
+      const response = await nativeRequest(mpUrl, 'POST', headers, payload);
+      
+      if (!response.ok) {
+        console.error('[Mercado Pago Pix] Erro ao criar pagamento:', response.json);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, message: response.json?.message || 'Erro ao gerar Pix no Mercado Pago.' }));
+      }
+      
+      const r = response.json;
+      const qrCode = r.point_of_interaction?.transaction_data?.qr_code || '';
+      const qrCodeBase64 = r.point_of_interaction?.transaction_data?.qr_code_base64 || '';
+      
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: true,
+        paymentId: r.id.toString(),
+        qrCode,
+        qrCodeBase64,
+        status: r.status
+      }));
+      
+    } catch (err) {
+      console.error('[Mercado Pago Pix] Erro no middleware:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, message: 'Erro interno ao criar Pix.' }));
+    }
+  });
+};
+
+export const checkPixMiddleware = async (req, res) => {
+  try {
+    const urlObj = new URL(req.url, 'http://localhost');
+    const paymentId = urlObj.searchParams.get('paymentId');
+    const token = urlObj.searchParams.get('token');
+    
+    if (!paymentId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, message: 'paymentId é obrigatório.' }));
+    }
+    
+    const isMock = !token || token === 'mock' || token === '' || token === 'null' || token === 'undefined';
+    
+    if (isMock) {
+      const mockPay = global.mockPayments?.[paymentId];
+      if (mockPay) {
+        if (Date.now() - mockPay.createdAt > 5000) {
+          mockPay.status = 'approved';
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: true, status: mockPay.status }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true, status: 'approved' }));
+    }
+    
+    // Chamada real ao Mercado Pago
+    const mpUrl = `https://api.mercadopago.com/v1/payments/${paymentId}`;
+    const headers = {
+      'Authorization': `Bearer ${token}`
+    };
+    
+    const response = await nativeRequest(mpUrl, 'GET', headers);
+    
+    if (!response.ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, message: 'Erro ao verificar pagamento no Mercado Pago.' }));
+    }
+    
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true, status: response.json.status }));
+    
+  } catch (err) {
+    console.error('[Mercado Pago Pix Status] Erro no middleware:', err);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: false, message: 'Erro interno ao checar Pix.' }));
+  }
+};

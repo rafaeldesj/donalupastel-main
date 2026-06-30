@@ -6,7 +6,7 @@ import { auth, db } from '../../config/firebase';
 import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 
 export const AuthButton = () => {
-  const { user, userData, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout } = useAuth();
+  const { user, userData, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout, completeRegistration } = useAuth();
 
   // Estados do formulário
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -80,6 +80,8 @@ export const AuthButton = () => {
         return 'A senha deve ter pelo menos 6 caracteres.';
       case 'auth/popup-closed-by-user':
         return 'O login com Google foi cancelado.';
+      case 'auth/operation-not-allowed':
+        return 'O login com Google não está ativo no Firebase Console. Por favor, ative-o nas configurações de Authentication.';
       default:
         return 'Ocorreu um erro inesperado. Tente novamente.';
     }
@@ -190,11 +192,130 @@ export const AuthButton = () => {
     }
   };
 
+  React.useEffect(() => {
+    if (user && !name) {
+      setName(user.displayName || '');
+    }
+  }, [user]);
+
+  const handleCompleteProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setError('Por favor, informe um número de celular válido com DDD.');
+      return;
+    }
+
+    const finalName = name.trim() || user?.displayName || 'Cliente Dona Lu';
+
+    setActionLoading(true);
+    try {
+      await completeRegistration(finalName, phone);
+    } catch (err: any) {
+      console.error(err);
+      setError('Ocorreu um erro ao concluir o cadastro. Tente novamente.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="auth-btn auth-btn-loading" style={{ width: '100%' }}>
         <span className="spinner"></span>
         <span>Carregando sessão...</span>
+      </div>
+    );
+  }
+
+  const isProfileIncomplete = !!user && (!userData || !userData.phoneNumber);
+
+  if (isProfileIncomplete) {
+    return (
+      <div className="hybrid-auth-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+          <span style={{ fontSize: '1.25rem' }}>📋</span>
+          <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>Concluir Cadastro</h3>
+        </div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.4' }}>
+          Para continuar, precisamos de mais algumas informações para a entrega dos seus pastéis!
+        </p>
+
+        <form onSubmit={handleCompleteProfileSubmit} className="auth-form">
+          {error && <div className="auth-error-message">{error}</div>}
+
+          <div className="input-group">
+            <label htmlFor="complete-name">Nome Completo</label>
+            <div className="input-wrapper">
+              <User size={18} className="input-icon" />
+              <input 
+                id="complete-name"
+                type="text" 
+                placeholder="Seu nome"
+                value={name || ''} 
+                onChange={(e) => setName(e.target.value)} 
+                required
+              />
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label htmlFor="complete-email">Endereço de E-mail</label>
+            <div className="input-wrapper">
+              <Mail size={18} className="input-icon" />
+              <input 
+                id="complete-email"
+                type="email" 
+                value={user.email || ''} 
+                disabled
+                style={{ opacity: 0.6, cursor: 'not-allowed' }}
+              />
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label htmlFor="complete-phone">Número de Celular (WhatsApp)</label>
+            <div className="input-wrapper">
+              <span className="input-icon" style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📞</span>
+              <input 
+                id="complete-phone"
+                type="tel" 
+                placeholder="(21) 99999-9999"
+                value={phone} 
+                onChange={handlePhoneChange} 
+                required
+              />
+            </div>
+            <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.75rem', color: 'var(--primary-gold)', lineHeight: '1.4' }}>
+              Precisamos do seu WhatsApp para confirmar a entrega e tirar dúvidas sobre o seu pedido!
+            </p>
+          </div>
+
+          <button type="submit" disabled={actionLoading} className="auth-btn auth-btn-login">
+            {actionLoading ? (
+              <>
+                <span className="spinner"></span>
+                <span>Salvando...</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={16} />
+                <span>Salvar e Entrar</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        <button 
+          type="button" 
+          onClick={logout} 
+          className="auth-tab-btn" 
+          style={{ width: '100%', marginTop: '1.5rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', textAlign: 'center', fontSize: '0.9rem' }}
+        >
+          Usar outra conta (Sair)
+        </button>
       </div>
     );
   }

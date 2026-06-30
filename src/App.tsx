@@ -5,6 +5,7 @@ import { AuthButton } from './components/common/AuthButton';
 import { DeliveryMap } from './components/DeliveryMap';
 import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
+import logoDonaluMobile from './assets/logo_donalu_mobile.png';
 
 // Lazy-loaded components for code-splitting performance
 const ClientDashboard = lazy(() => import('./pages/client/ClientDashboard'));
@@ -60,11 +61,26 @@ const MainLayout = () => {
     }
   }, [user, userData]);
 
-  if (!user && !isVisitor) {
+  const isProfileIncomplete = !!user && (!userData || !userData.phoneNumber);
+
+  if ((!user || isProfileIncomplete) && !isVisitor) {
     return (
       <div className="login-page-layout">
         <header className="app-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-          <img src={logoDonalu} alt="Dona Lu Pastelaria" decoding="async" style={{ width: '90px', height: '90px', borderRadius: '50%', border: '2px solid var(--primary-gold)', boxShadow: '0 4px 15px rgba(201, 28, 28, 0.4)' }} />
+          <img 
+            src={logoDonalu} 
+            alt="Dona Lu Pastelaria" 
+            decoding="async" 
+            className="logo-desktop"
+            style={{ width: '90px', height: '90px', borderRadius: '50%', border: '2px solid var(--primary-gold)', boxShadow: '0 4px 15px rgba(201, 28, 28, 0.4)' }} 
+          />
+          <img 
+            src={logoDonaluMobile} 
+            alt="Dona Lu Pastelaria" 
+            decoding="async" 
+            className="logo-mobile"
+            style={{ width: '120px', height: '120px', borderRadius: '50%', border: '2px solid var(--primary-gold)', boxShadow: '0 4px 15px rgba(201, 28, 28, 0.4)' }} 
+          />
           <h1 className="logo-title" style={{ marginTop: '0.5rem', marginBottom: 0 }}>Dona Lu Pastelaria</h1>
           <p className="subtitle" style={{ margin: 0 }}>Pastéis com borda crocante e irresistível!</p>
         </header>
@@ -169,9 +185,14 @@ const MainLayout = () => {
   { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'admin', 'teste_mapa'] },
   { label: 'Configurações', ids: ['users', 'configuracoes'] },
 ];
-const getRoleLabel = (r: string) => {
+const getRoleLabel = (r: string): React.ReactNode => {
     switch (r) {
-      case 'developer': return 'Developer';
+      case 'developer': return (
+        <>
+          <span className="role-label-desktop">Desenvolvedor</span>
+          <span className="role-label-mobile">Dev</span>
+        </>
+      );
       case 'owner': return 'Proprietário';
       case 'manager': return 'Gerente';
       case 'staff': {

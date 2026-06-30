@@ -121,6 +121,8 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
   const [locationError, setLocationError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [complement, setComplement] = useState(initialAddress?.complement || '');
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [searchPlaceholder, setSearchPlaceholder] = useState('Buscar endereço de entrega...');
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -190,7 +192,7 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
     try {
       // Tenta primeiro o reverse geocoding do ArcGIS para máxima precisão de endereços e números no Brasil
       try {
-        const arcgisUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&location=${lng},${lat}`;
+        const arcgisUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=json&location=${lng},${lat}&featureTypes=PointAddress,Subaddress,StreetAddress,POI`;
         const arcgisRes = await fetch(arcgisUrl);
         if (arcgisRes.ok) {
           const arcgisData = await arcgisRes.json();
@@ -199,12 +201,27 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
             
             // Extrai rua e número
             let street = a.Address || '';
-            const houseNumber = a.AddNum || '';
+            let houseNumber = a.AddNum || '';
+            
+            if (!houseNumber && street) {
+              // Tenta extrair o número do final da rua (ex: "Rua Jiçara, 239" ou "Rua Jiçara 239")
+              const matchEnd = street.match(/(?:,|\s)+\s*(\d+[a-zA-Z]?)\s*$/);
+              if (matchEnd) {
+                houseNumber = matchEnd[1];
+              } else {
+                // Tenta extrair do início (ex: "239 Rua Jiçara")
+                const matchStart = street.match(/^\s*(\d+[a-zA-Z]?)(?:\s+|,)/);
+                if (matchStart) {
+                  houseNumber = matchStart[1];
+                }
+              }
+            }
             
             if (houseNumber && street) {
-              // Remove o número e possíveis delimitadores do final da rua
-              const regex = new RegExp(`[,\\s]*${houseNumber}$`, 'i');
-              street = street.replace(regex, '').trim();
+              // Remove o número e possíveis delimitadores do final e do início da rua
+              const regexEnd = new RegExp(`[,\\s]*${houseNumber}$`, 'i');
+              const regexStart = new RegExp(`^\\s*${houseNumber}[,\\s]*`, 'i');
+              street = street.replace(regexEnd, '').replace(regexStart, '').trim();
             }
 
             const addr: MapAddress = {
@@ -221,6 +238,8 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
               setSelectedAddress(addr);
               setSearchQuery(addr.number ? `${addr.street}, ${addr.number}` : addr.street);
               setComplement('');
+              setIsCorrect(null);
+              setSearchPlaceholder('Buscar endereço de entrega...');
               placeMarker(lat, lng, addr);
               onAddressSelect(addr);
               map.flyTo([lat, lng], 17, { animate: true, duration: 1 });
@@ -271,6 +290,8 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
       setSelectedAddress(addr);
       setSearchQuery(addr.number ? `${addr.street}, ${addr.number}` : addr.street);
       setComplement('');
+      setIsCorrect(null);
+      setSearchPlaceholder('Buscar endereço de entrega...');
       placeMarker(lat, lng, addr);
       onAddressSelect(addr);
       map.flyTo([lat, lng], 17, { animate: true, duration: 1 });
@@ -506,6 +527,8 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
   };
 
   const handleSelectResult = async (result: NominatimResult) => {
+    setIsCorrect(null);
+    setSearchPlaceholder('Buscar endereço de entrega...');
     const nominatimLat = parseFloat(result.lat);
     const nominatimLng = parseFloat(result.lon);
     const addr = buildAddress(result, nominatimLat, nominatimLng);
@@ -590,6 +613,35 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
     }
   };
 
+  const handleAddressCorrectChange = (correct: boolean) => {
+    setIsCorrect(correct);
+    if (correct) {
+      setSearchPlaceholder('Buscar endereço de entrega...');
+      // Se sim, foca no campo de Número ou Complemento
+      setTimeout(() => {
+        const numInput = document.getElementById('map-address-number') as HTMLInputElement;
+        const compInput = document.getElementById('map-address-complement') as HTMLInputElement;
+        if (numInput && !numInput.value) {
+          numInput.focus();
+        } else if (compInput) {
+          compInput.focus();
+        }
+      }, 50);
+    } else {
+      // Se não, foca no campo de busca de endereço e limpa o texto
+      const searchInput = document.getElementById('map-address-search') as HTMLInputElement;
+      if (searchInput) {
+        setSearchQuery('');
+        setSearchResults([]);
+        setShowDropdown(false);
+        setSearchPlaceholder('Digite aqui manualmente o seu endereço...');
+        setTimeout(() => {
+          searchInput.focus();
+        }, 50);
+      }
+    }
+  };
+
   return (
     <div className="delivery-map-wrapper">
       {/* Search bar */}
@@ -602,7 +654,7 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
             id="map-address-search"
             type="text"
             className="map-search-input"
-            placeholder="Buscar endereço de entrega..."
+            placeholder={searchPlaceholder}
             value={searchQuery}
             onChange={(e) => handleSearchInput(e.target.value)}
             onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
@@ -687,6 +739,13 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
         </div>
       )}
 
+      {/* Informação sobre ajuste de marcador — posicionada logo após o mapa */}
+      {selectedAddress && (
+        <div style={{ marginTop: '0.4rem', marginBottom: '0.2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+          💡 Clique em qualquer ponto do mapa para ajustar o marcador.
+        </div>
+      )}
+
       {/* Selected address summary */}
       {selectedAddress && (
         <div className="map-selected-address animate-fade-in">
@@ -707,12 +766,14 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
               {selectedAddress.zipCode && ` · CEP ${selectedAddress.zipCode}`}
             </p>
           </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '0.75rem', marginTop: '0.75rem' }}>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>
                 Número *
               </label>
               <input
+                id="map-address-number"
                 type="text"
                 className="pastel-edit-input"
                 style={{ marginBottom: 0 }}
@@ -726,6 +787,7 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
                 Complemento
               </label>
               <input
+                id="map-address-complement"
                 type="text"
                 className="pastel-edit-input"
                 style={{ marginBottom: 0 }}
@@ -735,8 +797,37 @@ export const DeliveryMap = ({ onAddressSelect, initialAddress }: DeliveryMapProp
               />
             </div>
           </div>
-          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-            💡 Clique em qualquer ponto do mapa para ajustar o marcador.
+
+          {/* Pergunta de confirmação de endereço — posicionada no final da div */}
+          <div className="map-confirm-wrapper" style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.75rem' }}>
+            <label className="map-confirm-label" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
+              O endereço obtido com a localização está correto?
+            </label>
+            <div className="map-confirm-options" style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  className="custom-round-checkbox"
+                  checked={isCorrect === true}
+                  onChange={() => handleAddressCorrectChange(true)}
+                />
+                Sim
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                <input
+                  type="checkbox"
+                  className="custom-round-checkbox"
+                  checked={isCorrect === false}
+                  onChange={() => handleAddressCorrectChange(false)}
+                />
+                Não
+              </label>
+            </div>
+            {isCorrect === false && (
+              <p className="map-confirm-hint" style={{ margin: '0.5rem 0 0 0', fontSize: '0.75rem', color: '#f87171', fontStyle: 'italic' }}>
+                💡 Digite aqui manualmente o seu endereço na barra de busca acima.
+              </p>
+            )}
           </div>
         </div>
       )}

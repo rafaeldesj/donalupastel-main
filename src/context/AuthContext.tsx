@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
@@ -15,6 +15,7 @@ interface AuthContextType {
   registerWithEmail: (email: string, password: string, name: string, phoneNumber?: string) => Promise<void>;
   logout: () => Promise<void>;
   updatePhoneNumber: (phone: string) => Promise<void>;
+  completeRegistration: (name: string, phone: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -61,16 +62,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
 
             if (!foundPreRegistration) {
-              const initialUserData: UserDocument = {
-                uid: currentUser.uid,
-                email: currentUser.email || '',
-                name: currentUser.displayName || 'Novo Cliente',
-                role: 'client',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-              await setDoc(userDocRef, initialUserData);
-              setUserData(initialUserData);
+              setUserData(null);
             }
           }
         } catch (error) {
@@ -88,7 +80,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+    
+    if (isMobile && !isLocalhost) {
+      await signInWithRedirect(auth, provider);
+    } else {
+      await signInWithPopup(auth, provider);
+    }
   };
 
   const loginWithEmail = async (email: string, password: string) => {
@@ -122,12 +121,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUserData(prev => prev ? { ...prev, phoneNumber: phone } : null);
   };
 
+  const completeRegistration = async (name: string, phone: string) => {
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDocSnap = await getDoc(userDocRef);
+    const existingData = userDocSnap.exists() ? userDocSnap.data() as UserDocument : null;
+    
+    const finalUserData: UserDocument = {
+      uid: user.uid,
+      email: user.email || '',
+      name: name,
+      role: existingData?.role || 'client',
+      phoneNumber: phone,
+      createdAt: existingData?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...(existingData || {})
+    };
+    
+    await setDoc(userDocRef, finalUserData);
+    setUserData(finalUserData);
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updatePhoneNumber }}>
+    <AuthContext.Provider value={{ user, userData, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout, updatePhoneNumber, completeRegistration }}>
       {children}
     </AuthContext.Provider>
   );

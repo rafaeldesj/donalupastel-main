@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ShoppingCart, MapPin, Plus, Minus, Trash2, Edit2, Check, X, Upload } from 'lucide-react';
 import { DeliveryMap } from '../../components/DeliveryMap';
 import type { MapAddress } from '../../components/DeliveryMap';
-import { collection, addDoc, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderItem } from '../../types/order';
 import pastelCrocante from '../../assets/pastel_crocante.png';
@@ -83,6 +83,28 @@ export const ClientDashboard = ({
   const [cardCvv, setCardCvv] = useState('');
   const [clientCpf, setClientCpf] = useState(userData?.cpf || '');
   const [saveCardConsent, setSaveCardConsent] = useState(false);
+
+  // Mercado Pago Pix states
+  const [storeConfig, setStoreConfig] = useState<any>(null);
+  const [showPixLightbox, setShowPixLightbox] = useState(false);
+  const [pixQrCode, setPixQrCode] = useState('');
+  const [pixQrCodeBase64, setPixQrCodeBase64] = useState('');
+  const [pixPaymentId, setPixPaymentId] = useState('');
+  const [pixPaymentStatus, setPixPaymentStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+
+  useEffect(() => {
+    const fetchStoreConfig = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'settings', 'store_config'));
+        if (docSnap.exists()) {
+          setStoreConfig(docSnap.data());
+        }
+      } catch (err) {
+        console.error('Erro ao buscar store_config:', err);
+      }
+    };
+    fetchStoreConfig();
+  }, []);
 
   useEffect(() => {
     if (userData?.cpf) {
@@ -256,6 +278,87 @@ export const ClientDashboard = ({
     }
   };
 
+  const completeCheckoutAfterPixPayment = async () => {
+    const now = new Date();
+    const businessStart = new Date(now);
+    if (now.getHours() < 6) {
+      businessStart.setDate(now.getDate() - 1);
+    }
+    businessStart.setHours(6, 0, 0, 0);
+
+    const qDaily = query(
+      collection(db, 'orders'),
+      where('createdAt', '>=', businessStart.toISOString())
+    );
+    const dailySnap = await getDocs(qDaily);
+    const dailySeq = dailySnap.size + 1;
+
+    const orderData: any = {
+      clientUid: user?.uid || '',
+      clientName: user?.displayName || user?.email || 'Cliente Anônimo',
+      clientPhone: userData?.phoneNumber || '',
+      items: cart,
+      total: cartTotal,
+      status: 'preparing',
+      createdAt: new Date().toISOString(),
+      orderType,
+      paymentMethod: 'pix',
+      mercadoPagoPaymentId: pixPaymentId,
+      dailySeq,
+      address: orderType === 'delivery' ? {
+        street: deliveryAddress!.street,
+        number: deliveryAddress!.number || '',
+        neighborhood: deliveryAddress!.neighborhood || '',
+        city: deliveryAddress!.city || 'Rio de Janeiro',
+        zipCode: deliveryAddress!.zipCode || '',
+        complement: deliveryAddress!.complement || '',
+        lat: deliveryAddress!.lat,
+        lng: deliveryAddress!.lng,
+      } : null,
+    };
+
+    await addDoc(collection(db, 'orders'), orderData);
+    setCart([]);
+    setDeliveryAddress(null);
+    setShowOrderSummary(false);
+    setPaymentMethod('pix');
+    setChangeFor('');
+    setOrderType('pickup');
+    
+    setTimeout(() => {
+      setShowPixLightbox(false);
+      setOrderPlaced(true);
+    }, 1500);
+  };
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (showPixLightbox && pixPaymentId && pixPaymentStatus === 'pending') {
+      let token = storeConfig?.storeOwnerAccessToken || storeConfig?.devAccessToken || 'mock';
+      if (token === 'null' || token === 'undefined' || !token) {
+        token = 'mock';
+      }
+      
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/pagamentos/check-pix?paymentId=${pixPaymentId}&token=${token}`);
+          const data = await res.json();
+          if (data.success && data.status === 'approved') {
+            setPixPaymentStatus('approved');
+            clearInterval(interval);
+            await completeCheckoutAfterPixPayment();
+          } else if (data.success && data.status === 'rejected') {
+            setPixPaymentStatus('rejected');
+            clearInterval(interval);
+          }
+        } catch (err) {
+          console.error('Erro ao verificar status Pix:', err);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [showPixLightbox, pixPaymentId, pixPaymentStatus, storeConfig, cart, cartTotal, orderType, deliveryAddress]);
+
   const handlePlaceOrder = async () => {
     setError(null);
     setSubmitting(true);
@@ -277,7 +380,36 @@ export const ClientDashboard = ({
 
       let finalStatus = 'pending';
 
-      if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
+      if (paymentMethod === 'pix') {
+        let token = storeConfig?.storeOwnerAccessToken || storeConfig?.devAccessToken || 'mock';
+        if (token === 'null' || token === 'undefined' || !token) {
+          token = 'mock';
+        }
+        const response = await fetch('/api/pagamentos/create-pix', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            amount: cartTotal,
+            email: user?.email || 'cliente@email.com',
+            name: user?.displayName || user?.email || 'Cliente',
+            cpf: userData?.cpf || '45678912364'
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Erro ao gerar Pix no Mercado Pago.');
+        }
+
+        setPixPaymentId(result.paymentId);
+        setPixQrCode(result.qrCode);
+        setPixQrCodeBase64(result.qrCodeBase64);
+        setPixPaymentStatus('pending');
+        setShowPixLightbox(true);
+        setSubmitting(false);
+        return;
+      } else if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
         finalStatus = 'aguardando_caixa';
       } else if (paymentMethod === 'credito') {
         // FLUXO DE PAGAMENTO ONLINE DO PAGBANK
@@ -1236,6 +1368,223 @@ export const ClientDashboard = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox de Pagamento via Pix */}
+      {showPixLightbox && (
+        <div
+          className="lightbox-overlay animate-fade-in"
+          style={{
+            zIndex: 3500,
+            alignItems: 'center',
+            justifyContent: 'center',
+            display: 'flex',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(5, 5, 8, 0.85)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)'
+          }}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #16121e 0%, #0d0a11 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              borderRadius: '24px',
+              padding: '2rem 1.75rem',
+              width: '90%',
+              maxWidth: '430px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '1.25rem',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(245,158,11,0.05)',
+              position: 'relative',
+              animation: 'fadeInUp 0.4s ease'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { setShowPixLightbox(false); setSubmitting(false); }}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                lineHeight: 1
+              }}
+              className="map-search-clear"
+            >
+              <X size={16} />
+            </button>
+
+            <div style={{ textAlign: 'center', width: '100%' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--primary-gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Pagamento Online
+              </span>
+              <h3 style={{ margin: '0.2rem 0 0.4rem', fontSize: '1.4rem', color: '#fff', fontWeight: 800 }}>
+                Pague com Pix
+              </h3>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>
+                Escaneie o código QR ou copie o código Pix abaixo. O pedido será enviado para a cozinha assim que o pagamento for confirmado.
+              </p>
+            </div>
+
+            {/* QR Code Container */}
+            <div style={{
+              background: '#fff',
+              padding: '1rem',
+              borderRadius: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+              position: 'relative',
+              width: '200px',
+              height: '200px'
+            }}>
+              {pixQrCodeBase64 ? (
+                <img
+                  src={`data:image/png;base64,${pixQrCodeBase64}`}
+                  alt="Mercado Pago Pix QR Code"
+                  style={{ width: '100%', height: '100%', display: 'block' }}
+                />
+              ) : (
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(pixQrCode)}`}
+                  alt="Pix QR Code Fallback"
+                  style={{ width: '100%', height: '100%', display: 'block' }}
+                />
+              )}
+            </div>
+
+            {/* Pix Copy and Paste String */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Código Pix Copia e Cola
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={pixQrCode}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(0,0,0,0.25)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '10px',
+                    padding: '0.65rem 0.85rem',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-secondary)',
+                    outline: 'none',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(pixQrCode);
+                    const btn = document.getElementById('pix-copy-btn');
+                    if (btn) {
+                      btn.innerText = 'Copiado! ✓';
+                      btn.style.backgroundColor = '#10b981';
+                      btn.style.borderColor = '#10b981';
+                      setTimeout(() => {
+                        btn.innerText = '📋 Copiar';
+                        btn.style.backgroundColor = 'var(--primary-gold)';
+                        btn.style.borderColor = 'var(--primary-gold)';
+                      }, 2000);
+                    }
+                  }}
+                  id="pix-copy-btn"
+                  style={{
+                    background: 'var(--primary-gold)',
+                    border: '1px solid var(--primary-gold)',
+                    borderRadius: '10px',
+                    padding: '0 1rem',
+                    color: '#000',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  📋 Copiar
+                </button>
+              </div>
+            </div>
+
+            {/* Status do pagamento */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.6rem',
+              width: '100%',
+              padding: '0.75rem',
+              background: pixPaymentStatus === 'approved' ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)',
+              border: pixPaymentStatus === 'approved' ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(255,255,255,0.05)',
+              borderRadius: '12px',
+              marginTop: '0.25rem'
+            }}>
+              {pixPaymentStatus === 'pending' ? (
+                <>
+                  <span className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px', borderColor: 'rgba(255,255,255,0.1)', borderTopColor: 'var(--primary-gold)' }} />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Aguardando confirmação de pagamento...
+                  </span>
+                </>
+              ) : pixPaymentStatus === 'approved' ? (
+                <>
+                  <span style={{ fontSize: '1.1rem' }}>✅</span>
+                  <span style={{ fontSize: '0.85rem', color: '#34d399', fontWeight: 700 }}>
+                    Pagamento Aprovado! Preparando pedido...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: '1.1rem' }}>❌</span>
+                  <span style={{ fontSize: '0.85rem', color: '#f87171', fontWeight: 700 }}>
+                    Pagamento recusado ou expirado.
+                  </span>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setShowPixLightbox(false); setSubmitting(false); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                textDecoration: 'underline',
+                marginTop: '0.2rem'
+              }}
+            >
+              Cancelar e voltar
+            </button>
           </div>
         </div>
       )}
