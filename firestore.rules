@@ -30,17 +30,14 @@ service cloud.firestore {
         (resource != null && resource.data.email == request.auth.token.email)
       );
       
-      // Permitir listagem (queries) apenas se for admin ou se for uma busca específica pelo próprio email
-      allow list: if request.auth != null && (
-        isAdmin() || 
+      // Permitir listagem (queries) apenas se for admin ou se for uma busca filtrando especificamente pelo e-mail
+      allow list: if isAdmin() || 
         (
           request.query.limit <= 10 &&
           request.query.filters.size() == 1 && 
           request.query.filters[0].op == '==' && 
-          request.query.filters[0].field == 'email' && 
-          request.query.filters[0].value == request.auth.token.email
-        )
-      );
+          request.query.filters[0].field == 'email'
+        );
       
       // Criar documento: se for o próprio usuário criando seu perfil (deve ser cliente) ou se for admin
       allow create: if request.auth != null && (

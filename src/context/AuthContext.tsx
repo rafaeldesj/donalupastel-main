@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc, limit } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import type { UserDocument } from '../types/user';
 
@@ -38,7 +38,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           } else {
             let foundPreRegistration = false;
             if (currentUser.email) {
-              const preRegQuery = query(collection(db, 'users'), where('email', '==', currentUser.email));
+              const preRegQuery = query(collection(db, 'users'), where('email', '==', currentUser.email), limit(1));
               const querySnapshot = await getDocs(preRegQuery);
               
               if (!querySnapshot.empty) {
