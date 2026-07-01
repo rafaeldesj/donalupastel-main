@@ -2,9 +2,14 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAzR9UQyV0xIwYgU9xoTuiEfqwhIiDvIrU",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "dona-lu-4242d.firebaseapp.com",
+  authDomain: (typeof window !== 'undefined' && !isLocalhost) 
+    ? window.location.hostname 
+    : (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "dona-lu-4242d.firebaseapp.com"),
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "dona-lu-4242d",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "dona-lu-4242d.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "87878437306",

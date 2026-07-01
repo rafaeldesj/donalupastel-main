@@ -84,7 +84,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
     
     if (isMobile && !isLocalhost) {
-      await signInWithRedirect(auth, provider);
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (err: any) {
+        console.warn("signInWithPopup falhou no celular, tentando redirect...", err);
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+          await signInWithRedirect(auth, provider);
+        } else {
+          throw err;
+        }
+      }
     } else {
       await signInWithPopup(auth, provider);
     }
