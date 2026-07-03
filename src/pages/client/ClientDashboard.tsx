@@ -66,6 +66,7 @@ export const ClientDashboard = ({
   const [orderType, setOrderType] = useState<'pickup' | 'delivery' | 'dine_in'>('pickup');
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
   const [changeFor, setChangeFor] = useState('');
+  const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   const [showOrderSummary, setShowOrderSummary] = useState(false);
 
   // PagBank Credit Card Form States
@@ -308,6 +309,10 @@ export const ClientDashboard = ({
       return;
     }
     if (!paymentMethod) { setError('Selecione a forma de pagamento.'); return; }
+    if (paymentMethod === 'dinheiro' && !noChangeNeeded && !changeFor.trim()) {
+      setError('Por favor, informe para quanto precisa de troco ou marque "Não preciso de troco".');
+      return;
+    }
     
     // Exige cadastro de número de celular se o cliente não tiver um cadastrado
     if (!isVisitor && user && !userData?.phoneNumber) {
@@ -584,6 +589,7 @@ export const ClientDashboard = ({
       setShowOrderSummary(false);
       setPaymentMethod('pix');
       setChangeFor('');
+      setNoChangeNeeded(false);
       setOrderType('pickup');
       setCardNumber('');
       setCardHolder('');
@@ -1106,7 +1112,11 @@ export const ClientDashboard = ({
                   <button
                     key={val}
                     type="button"
-                    onClick={() => setPaymentMethod(val)}
+                    onClick={() => {
+                      setPaymentMethod(val);
+                      setChangeFor('');
+                      setNoChangeNeeded(false);
+                    }}
                     style={{
                       padding: '0.6rem 0.5rem',
                       borderRadius: '10px',
@@ -1130,20 +1140,43 @@ export const ClientDashboard = ({
               </div>
 
               {paymentMethod === 'dinheiro' && (
-                <div style={{ marginTop: '0.6rem' }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
-                    Troco para quanto? (opcional)
-                  </label>
-                  <input
-                    type="number"
-                    className="pastel-edit-input"
-                    style={{ marginBottom: 0, maxWidth: '180px' }}
-                    placeholder="Ex: 50,00"
-                    value={changeFor}
-                    onChange={(e) => setChangeFor(e.target.value)}
-                    min="0"
-                    step="0.01"
-                  />
+                <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      type="checkbox"
+                      id="no-change-needed"
+                      checked={noChangeNeeded}
+                      onChange={(e) => {
+                        setNoChangeNeeded(e.target.checked);
+                        if (e.target.checked) {
+                          setChangeFor('');
+                        }
+                      }}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="no-change-needed" style={{ fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                      Não preciso de troco
+                    </label>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem', opacity: noChangeNeeded ? 0.5 : 1 }}>
+                      Troco para quanto?
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="pastel-edit-input"
+                      style={{ marginBottom: 0, maxWidth: '180px', opacity: noChangeNeeded ? 0.5 : 1, cursor: noChangeNeeded ? 'not-allowed' : 'text' }}
+                      placeholder="Ex: 50,00"
+                      value={changeFor}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9.,]/g, '');
+                        setChangeFor(val);
+                      }}
+                      disabled={noChangeNeeded}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -1259,16 +1292,27 @@ export const ClientDashboard = ({
               )}
             </div>
 
+            {paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '' && (
+              <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: '0.25rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.5rem 0.75rem', borderRadius: '8px', fontWeight: 600 }}>
+                ⚠️ Por favor, informe para quanto precisa de troco ou marque "Não preciso de troco" para prosseguir.
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={cart.length === 0 || (orderType === 'delivery' && !deliveryAddress) || isClosedForUser}
+              disabled={
+                cart.length === 0 || 
+                (orderType === 'delivery' && !deliveryAddress) || 
+                isClosedForUser ||
+                (paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '')
+              }
               className="auth-btn auth-btn-login"
               style={{ 
                 marginTop: '6px', 
                 padding: '0.7rem', 
                 fontSize: '0.95rem', 
                 fontWeight: 700,
-                ...(isClosedForUser ? { opacity: 0.5, cursor: 'not-allowed', background: '#4b5563' } : {})
+                ...((isClosedForUser || (paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '')) ? { opacity: 0.5, cursor: 'not-allowed', background: '#4b5563' } : {})
               }}
             >
               <span>🛒 Ver Resumo do Pedido</span>
@@ -1386,9 +1430,13 @@ export const ClientDashboard = ({
             <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
               <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>💳 Pagamento</h4>
               <p style={{ margin: 0, fontSize: '0.9rem', color: '#fff', fontWeight: 600 }}>{paymentLabels[paymentMethod]}</p>
-              {paymentMethod === 'dinheiro' && changeFor && (
+              {paymentMethod === 'dinheiro' && (
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                  Troco para R$ {parseFloat(changeFor.replace(',', '.')).toFixed(2).replace('.', ',')} · Troco: R$ {Math.max(0, parseFloat(changeFor.replace(',', '.')) - cartTotal).toFixed(2).replace('.', ',')}
+                  {changeFor ? (
+                    <>Troco para R$ {parseFloat(changeFor.replace(',', '.')).toFixed(2).replace('.', ',')} · Troco: R$ {Math.max(0, parseFloat(changeFor.replace(',', '.')) - cartTotal).toFixed(2).replace('.', ',')}</>
+                  ) : (
+                    <>Não preciso de troco</>
+                  )}
                 </p>
               )}
             </div>

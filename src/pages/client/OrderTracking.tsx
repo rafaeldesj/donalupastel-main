@@ -192,6 +192,7 @@ interface PaymentRetryProps {
 const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
   const [changeFor, setChangeFor] = useState('');
+  const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   
   // Card states
   const [useSavedCard, setUseSavedCard] = useState(true);
@@ -214,6 +215,10 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
   const handleRetryPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (paymentMethod === 'dinheiro' && !noChangeNeeded && !changeFor.trim()) {
+      setError('Por favor, informe para quanto precisa de troco ou marque "Não preciso de troco".');
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -330,7 +335,11 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
             <button
               key={val}
               type="button"
-              onClick={() => setPaymentMethod(val)}
+              onClick={() => {
+              setPaymentMethod(val);
+              setChangeFor('');
+              setNoChangeNeeded(false);
+            }}
               style={{
                 padding: '0.6rem 0.5rem',
                 borderRadius: '10px',
@@ -350,20 +359,43 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
         </div>
 
         {paymentMethod === 'dinheiro' && (
-          <div style={{ marginTop: '0.3rem' }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
-              Troco para quanto? (opcional)
-            </label>
-            <input
-              type="number"
-              className="pastel-edit-input"
-              style={{ marginBottom: 0, maxWidth: '180px' }}
-              placeholder="Ex: 50,00"
-              value={changeFor}
-              onChange={(e) => setChangeFor(e.target.value)}
-              min="0"
-              step="0.01"
-            />
+          <div style={{ marginTop: '0.3rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input
+                type="checkbox"
+                id={`no-change-needed-retry-${order.id}`}
+                checked={noChangeNeeded}
+                onChange={(e) => {
+                  setNoChangeNeeded(e.target.checked);
+                  if (e.target.checked) {
+                    setChangeFor('');
+                  }
+                }}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--primary-gold)', cursor: 'pointer' }}
+              />
+              <label htmlFor={`no-change-needed-retry-${order.id}`} style={{ fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                Não preciso de troco
+              </label>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem', opacity: noChangeNeeded ? 0.5 : 1 }}>
+                Troco para quanto?
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="pastel-edit-input"
+                style={{ marginBottom: 0, maxWidth: '180px', opacity: noChangeNeeded ? 0.5 : 1, cursor: noChangeNeeded ? 'not-allowed' : 'text' }}
+                placeholder="Ex: 50,00"
+                value={changeFor}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9.,]/g, '');
+                  setChangeFor(val);
+                }}
+                disabled={noChangeNeeded}
+              />
+            </div>
           </div>
         )}
 
@@ -478,11 +510,23 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
           </div>
         )}
 
+        {paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '' && (
+          <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: '0.25rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.5rem 0.75rem', borderRadius: '8px', fontWeight: 600 }}>
+            ⚠️ Por favor, informe para quanto precisa de troco ou marque "Não preciso de troco" para prosseguir.
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '')}
           className="auth-btn auth-btn-login"
-          style={{ marginTop: '0.5rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 700 }}
+          style={{ 
+            marginTop: '0.5rem', 
+            padding: '0.75rem', 
+            fontSize: '0.95rem', 
+            fontWeight: 700,
+            ...((submitting || (paymentMethod === 'dinheiro' && !noChangeNeeded && changeFor.trim() === '')) ? { opacity: 0.5, cursor: 'not-allowed', background: '#4b5563' } : {})
+          }}
         >
           {submitting ? (
             <><span className="spinner" /><span>Processando pagamento...</span></>
