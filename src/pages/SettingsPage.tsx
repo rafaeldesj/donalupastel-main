@@ -197,26 +197,34 @@ export const SettingsPage = () => {
 
   const handleSaveDevMPConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isDev || !user) return;
+    if ((!isDev && role !== 'owner') || !user) return;
     setSubmittingDevMP(true);
 
     try {
       const docRef = doc(db, 'settings', 'store_config');
-      await updateDoc(docRef, {
-        devPercentage: storeConfig.devPercentage ?? 1,
-        devClientId: storeConfig.devClientId ?? '',
-        devAccessToken: storeConfig.devAccessToken ?? '',
+      
+      const updateData: any = {
         storeOwnerAccessToken: storeConfig.storeOwnerAccessToken ?? '',
         storeOwnerEmail: storeConfig.storeOwnerEmail ?? ''
-      });
+      };
+
+      if (isDev) {
+        updateData.devPercentage = storeConfig.devPercentage ?? 1;
+        updateData.devClientId = storeConfig.devClientId ?? '';
+        updateData.devAccessToken = storeConfig.devAccessToken ?? '';
+      }
+
+      await updateDoc(docRef, updateData);
 
       await logAuditAction({
         userId: user.uid,
         userEmail: user.email || '',
-        userName: userData?.name || user.displayName || 'Developer',
+        userName: userData?.name || user.displayName || (isDev ? 'Developer' : 'Proprietário'),
         actionType: 'UPDATE_DEV_MP_CONFIG',
         title: 'Configuração do Mercado Pago Split',
-        description: `O desenvolvedor atualizou as configurações de Split do Mercado Pago. Porcentagem Dev: ${storeConfig.devPercentage}%, Porcentagem Estabelecimento: ${100 - (storeConfig.devPercentage ?? 1)}%`
+        description: isDev 
+          ? `O desenvolvedor atualizou as configurações de Split do Mercado Pago. Porcentagem Dev: ${storeConfig.devPercentage}%, Porcentagem Estabelecimento: ${100 - (storeConfig.devPercentage ?? 1)}%`
+          : `O proprietário conectou/desconectou a conta do estabelecimento no Mercado Pago: ${storeConfig.storeOwnerEmail || 'Sem conta conectada'}`
       });
 
       showFeedback('success', 'Configurações do Mercado Pago salvas com sucesso!');
@@ -587,7 +595,7 @@ export const SettingsPage = () => {
             </>
           )}
 
-          {isDev && (
+          {(isDev || role === 'owner') && (
             <button
               type="button"
               onClick={() => setActiveTab('advanced')}
@@ -988,7 +996,7 @@ export const SettingsPage = () => {
           )}
 
           {/* Aba 4: Avançado Dev */}
-          {activeTab === 'advanced' && isDev && (
+          {activeTab === 'advanced' && (isDev || role === 'owner') && (
             <form onSubmit={handleSaveDevMPConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div>
                 <h3 style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', margin: 0, color: '#a855f7' }}>Split de Pagamentos & Mercado Pago 💳</h3>
@@ -1010,10 +1018,12 @@ export const SettingsPage = () => {
                     { pct: 0, label: 'Sem Split (100% Loja)' }
                   ].map((option) => {
                     const isSelected = (storeConfig.devPercentage ?? 1) === option.pct;
+                    const disabled = !isDev;
                     return (
                       <button
                         key={option.pct}
                         type="button"
+                        disabled={disabled}
                         onClick={() => setStoreConfig(prev => ({ ...prev, devPercentage: option.pct }))}
                         style={{
                           padding: '0.6rem 1rem',
@@ -1021,7 +1031,8 @@ export const SettingsPage = () => {
                           border: isSelected ? '1px solid var(--primary-gold)' : '1px solid rgba(255, 255, 255, 0.08)',
                           background: isSelected ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.02)',
                           color: isSelected ? 'var(--primary-gold)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                          opacity: disabled ? 0.6 : 1,
                           fontWeight: 600,
                           fontSize: '0.85rem',
                           transition: 'all 0.2s'
@@ -1048,6 +1059,8 @@ export const SettingsPage = () => {
                       placeholder="Ex: 87878437306"
                       value={storeConfig.devClientId || ''}
                       onChange={(e) => setStoreConfig(prev => ({ ...prev, devClientId: e.target.value }))}
+                      disabled={!isDev}
+                      style={!isDev ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                     />
                   </div>
                   <div className="input-group">
@@ -1058,6 +1071,8 @@ export const SettingsPage = () => {
                       placeholder="Ex: APP_USR-..."
                       value={storeConfig.devAccessToken || ''}
                       onChange={(e) => setStoreConfig(prev => ({ ...prev, devAccessToken: e.target.value }))}
+                      disabled={!isDev}
+                      style={!isDev ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                     />
                   </div>
                 </div>
