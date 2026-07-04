@@ -226,6 +226,8 @@ export const ClientDashboard = ({
   const [changeFor, setChangeFor] = useState('');
   const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   const [showOrderSummary, setShowOrderSummary] = useState(false);
+  const [categories, setCategories] = useState<string[]>(['Pastéis Gourmet Especiais', 'Bebidas']);
+  const [activeCategory, setActiveCategory] = useState<string>('Pastéis Gourmet Especiais');
 
   // PagBank Credit Card Form States
   const [useSavedCard, setUseSavedCard] = useState(true);
@@ -259,6 +261,22 @@ export const ClientDashboard = ({
   }, []);
 
   useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'menu_categories'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.list && Array.isArray(data.list)) {
+          const uniqueList = Array.from(new Set(['Pastéis Gourmet Especiais', 'Bebidas', ...data.list]));
+          setCategories(uniqueList);
+        }
+      } else {
+        setDoc(doc(db, 'settings', 'menu_categories'), { list: ['Pastéis Gourmet Especiais', 'Bebidas'] })
+          .catch(e => console.error("Erro ao criar menu_categories:", e));
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     const q = query(collection(db, 'products'));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       if (snapshot.empty) {
@@ -271,10 +289,31 @@ export const ClientDashboard = ({
               name: item.name,
               price: item.price,
               description: item.description,
-              image: item.image || ''
+              image: item.image || '',
+              category: 'Pastéis Gourmet Especiais'
             });
           } catch (err) {
             console.error("Erro ao semear produto:", item.name, err);
+          }
+        }
+        const defaultDrinks = [
+          { id: 101, name: 'Coca-Cola Lata 350ml', price: 5.50, description: 'Refrigerante Coca-Cola original lata.' },
+          { id: 102, name: 'Guaraná Antarctica 350ml', price: 5.00, description: 'Refrigerante Guaraná Antarctica lata.' },
+          { id: 103, name: 'Água Mineral 500ml', price: 3.50, description: 'Água mineral sem gás.' }
+        ];
+        for (const item of defaultDrinks) {
+          const docId = item.id.toString();
+          try {
+            await setDoc(doc(db, 'products', docId), {
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              description: item.description,
+              image: '',
+              category: 'Bebidas'
+            });
+          } catch (err) {
+            console.error("Erro ao semear bebida:", item.name, err);
           }
         }
       } else {
@@ -292,7 +331,8 @@ export const ClientDashboard = ({
               name: editName,
               price: editPrice,
               description: editDescription,
-              image: editImage
+              image: editImage,
+              category: activeCategory
             };
             setPastels([tempNewItem, ...itemsList]);
             return;
@@ -304,7 +344,7 @@ export const ClientDashboard = ({
     });
 
     return () => unsubscribe();
-  }, [isNewItem, editName, editPrice, editDescription, editImage]);
+  }, [isNewItem, editName, editPrice, editDescription, editImage, activeCategory]);
 
   useEffect(() => {
     if (userData?.cpf) {
@@ -343,17 +383,21 @@ export const ClientDashboard = ({
 
   const saveEdit = async () => {
     if (!editName.trim()) {
-      alert("O nome do pastel não pode ser vazio.");
+      alert("O nome do item não pode ser vazio.");
       return;
     }
     try {
       const docId = editingId!.toString();
+      const existingItem = pastels.find((p: any) => p.id === editingId);
+      const category = existingItem?.category || activeCategory;
+
       await setDoc(doc(db, 'products', docId), {
         id: editingId,
         name: editName,
         description: editDescription,
         price: editPrice,
-        image: editImage
+        image: editImage,
+        category: category
       });
       setEditingId(null);
       if (editingId === isNewItem) {
@@ -395,7 +439,8 @@ export const ClientDashboard = ({
       name: '',
       price: 0,
       description: '',
-      image: ''
+      image: '',
+      category: activeCategory
     };
     setPastels([newPastel, ...pastels]);
     setEditingId(newId);
@@ -404,6 +449,24 @@ export const ClientDashboard = ({
     setEditPrice(0);
     setEditImage('');
     setIsNewItem(newId);
+  };
+
+  const handleCreateNewCategory = async () => {
+    const name = prompt("Digite o nome da nova categoria de menu:");
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    if (categories.some(c => c.toLowerCase() === cleanName.toLowerCase())) {
+      alert("Esta categoria já existe!");
+      return;
+    }
+    const newList = [...categories, cleanName];
+    try {
+      await setDoc(doc(db, 'settings', 'menu_categories'), { list: newList });
+      setActiveCategory(cleanName);
+    } catch (err) {
+      console.error("Erro ao criar nova categoria:", err);
+      alert("Erro ao criar nova categoria no servidor.");
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -828,12 +891,53 @@ export const ClientDashboard = ({
     );
   }
 
+  const filteredProducts = pastels.filter((p: any) => {
+    const cat = p.category || 'Pastéis Gourmet Especiais';
+    return cat.toLowerCase() === activeCategory.toLowerCase();
+  });
+
+  const isBebidasTab = activeCategory.toLowerCase().includes('bebida');
+  const isPastelTab = activeCategory.toLowerCase().includes('pastel') || activeCategory.toLowerCase().includes('pastéis') || activeCategory.toLowerCase().includes('pasteis');
+  
+  const namePlaceholder = isBebidasTab 
+    ? "Nome da bebida" 
+    : (isPastelTab ? "Nome do pastel" : "Nome do item");
+
+  const descPlaceholder = isBebidasTab 
+    ? "Descrição da bebida" 
+    : (isPastelTab ? "Descrição do pastel" : "Descrição do item");
+
   // Padrão: exibe o cardápio e carrinho
   return (
     <div className="dashboard-layout animate-fade-in">
       <div className="dashboard-header">
         <h2>Cardápio Digital 🥟</h2>
         <p>Monte seu carrinho e faça seu pedido!</p>
+      </div>
+
+      {/* Menu deslizante horizontal de categorias */}
+      <div className="category-menu-container">
+        <div className="category-menu-scroll">
+          {categories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              className={`category-menu-btn ${activeCategory === category ? 'active' : ''}`}
+              onClick={() => setActiveCategory(category)}
+            >
+              {category}
+            </button>
+          ))}
+          {canEdit && (
+            <button
+              type="button"
+              className="category-menu-btn create-new-btn"
+              onClick={handleCreateNewCategory}
+            >
+              ➕ Criar novo menu
+            </button>
+          )}
+        </div>
       </div>
 
       {isStoreClosed && (
@@ -987,7 +1091,7 @@ export const ClientDashboard = ({
         {/* Lista de Pastéis */}
         <div className="menu-section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '0.5rem' }}>
-            <h3 style={{ margin: 0, border: 'none', padding: 0 }}>Pastéis Gourmet Especiais</h3>
+            <h3 style={{ margin: 0, border: 'none', padding: 0 }}>{activeCategory}</h3>
             {canEdit && (
               <button 
                 type="button" 
@@ -1015,8 +1119,22 @@ export const ClientDashboard = ({
             )}
           </div>
           <div className="pastels-list">
-            {pastels.map((pastel: any) => (
-              <div key={pastel.id} className="pastel-card">
+            {filteredProducts.length === 0 ? (
+              <div style={{ 
+                color: 'var(--text-secondary)', 
+                padding: '3rem 1rem', 
+                textAlign: 'center', 
+                width: '100%', 
+                background: 'rgba(255,255,255,0.01)', 
+                border: '1px dashed rgba(255,255,255,0.06)', 
+                borderRadius: '12px',
+                fontSize: '0.95rem'
+              }}>
+                Nenhum produto cadastrado nesta categoria.
+              </div>
+            ) : (
+              filteredProducts.map((pastel: any) => (
+                <div key={pastel.id} className="pastel-card">
                 {/* Foto do Pastel */}
                 <div className="pastel-img-container" onClick={() => pastel.image && setZoomedImage(pastel.image)} title="Clique para ampliar">
                   {pastel.image ? (
@@ -1035,13 +1153,13 @@ export const ClientDashboard = ({
                         className="pastel-edit-input" 
                         value={editName} 
                         onChange={(e) => setEditName(e.target.value)} 
-                        placeholder="Nome do pastel" 
+                        placeholder={namePlaceholder} 
                       />
                       <textarea 
                         className="pastel-edit-textarea" 
                         value={editDescription} 
                         onChange={(e) => setEditDescription(e.target.value)} 
-                        placeholder="Descrição do pastel" 
+                        placeholder={descPlaceholder} 
                       />
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>R$</span>
@@ -1115,7 +1233,7 @@ export const ClientDashboard = ({
                   )}
                 </div>
               </div>
-            ))}
+            )))}
           </div>
         </div>
 

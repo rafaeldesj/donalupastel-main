@@ -2259,4 +2259,65 @@ select:focus {
   }
 }
 
+/* ---- Horizontal Sliding Menu / Category Tabs ---- */
+.category-menu-container {
+  width: 100%;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.category-menu-scroll {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding: 0.25rem 0.25rem 0.75rem 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) rgba(10, 7, 7, 0.4);
+  -webkit-overflow-scrolling: touch;
+}
+
+.category-menu-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  padding: 0.6rem 1.25rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.category-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.category-menu-btn.active {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: var(--primary-gold);
+  color: var(--primary-gold);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+}
+
+.category-menu-btn.create-new-btn {
+  background: rgba(16, 185, 129, 0.05);
+  border: 1px dashed rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.category-menu-btn.create-new-btn:hover {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: #34d399;
+  color: #52e3b2;
+}
+
 
