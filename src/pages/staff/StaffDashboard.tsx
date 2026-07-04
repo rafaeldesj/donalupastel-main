@@ -233,9 +233,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                         {order.items.map((item, index) => (
                           <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong></p>
                         ))}
-                        {order.deliveryFee > 0 && (
+                        {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
-                            🛵 Taxa de Entrega: R$ {order.deliveryFee.toFixed(2).replace('.', ',')}
+                            🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
                           </p>
                         )}
                       </div>
@@ -295,9 +295,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                         {order.items.map((item, index) => (
                           <p key={index} className="order-desc">{item.quantity}x {item.name}</p>
                         ))}
-                        {order.deliveryFee > 0 && (
+                        {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
-                            🛵 Taxa de Entrega: R$ {order.deliveryFee.toFixed(2).replace('.', ',')}
+                            🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
                           </p>
                         )}
                       </div>
@@ -363,9 +363,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                           {order.items.map((item, index) => (
                             <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name}</p>
                           ))}
-                          {order.deliveryFee > 0 && (
+                          {(order.deliveryFee ?? 0) > 0 && (
                             <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
-                              🛵 Taxa de Entrega: R$ {order.deliveryFee.toFixed(2).replace('.', ',')}
+                              🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
                             </p>
                           )}
                         </div>
@@ -473,9 +473,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                         {order.items.map((item, index) => (
                           <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong></p>
                         ))}
-                        {order.deliveryFee > 0 && (
+                        {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
-                            🛵 Taxa de Entrega: R$ {order.deliveryFee.toFixed(2).replace('.', ',')}
+                            🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
                           </p>
                         )}
                       </div>

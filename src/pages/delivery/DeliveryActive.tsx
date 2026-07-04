@@ -499,9 +499,9 @@ export const DeliveryActive = () => {
                   {item.quantity}x {item.name}
                 </p>
               ))}
-              {activeOrder.deliveryFee > 0 && (
+              {(activeOrder.deliveryFee ?? 0) > 0 && (
                 <p style={{ margin: '0.3rem 0', fontSize: '0.88rem', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
-                  🛵 Taxa de Entrega: R$ {activeOrder.deliveryFee.toFixed(2).replace('.', ',')}
+                  🛵 Taxa de Entrega: R$ {(activeOrder.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
                 </p>
               )}
             </div>
@@ -579,8 +579,8 @@ export const DeliveryActive = () => {
                     {order.items.map((it, idx) => (
                       <div key={idx}>{it.quantity}x {it.name}</div>
                     ))}
-                    {order.deliveryFee > 0 && (
-                      <div style={{ color: 'var(--primary-gold)', fontStyle: 'italic' }}>🛵 Taxa de Entrega: R$ {order.deliveryFee.toFixed(2).replace('.', ',')}</div>
+                    {(order.deliveryFee ?? 0) > 0 && (
+                      <div style={{ color: 'var(--primary-gold)', fontStyle: 'italic' }}>🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}</div>
                     )}
                   </div>
 
