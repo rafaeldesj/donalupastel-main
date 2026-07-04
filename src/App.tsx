@@ -316,13 +316,15 @@ const getRoleLabel = (r: string): React.ReactNode => {
               )}
             </button>
           )}
-          <span className="welcome-msg">Olá, <strong>{user ? (user.displayName?.split(' ')[0] || user.email?.split('@')[0]) : 'Visitante'}</strong></span>
-          {userData?.role && (
-            <span className="role-badge">
-              <ShieldCheck size={12} style={{ marginRight: '4px' }} />
-              {getRoleLabel(userData.role)}
-            </span>
-          )}
+          <div className="header-user-info-stack">
+            <span className="welcome-msg">Olá, <strong>{user ? (user.displayName?.split(' ')[0] || user.email?.split('@')[0]) : 'Visitante'}</strong></span>
+            {userData?.role && (
+              <span className="role-badge">
+                <ShieldCheck size={12} style={{ marginRight: '4px' }} />
+                {getRoleLabel(userData.role)}
+              </span>
+            )}
+          </div>
           {user ? (
             <button onClick={logout} className="logout-action-btn">Sair</button>
           ) : (

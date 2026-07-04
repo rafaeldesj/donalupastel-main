@@ -266,8 +266,10 @@ export const ClientDashboard = ({
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.list && Array.isArray(data.list)) {
-          const uniqueList = Array.from(new Set(['Pastéis Gourmet Especiais', 'Bebidas', ...data.list]));
-          setCategories(uniqueList);
+          setCategories(data.list);
+          if (data.list.length > 0 && !data.list.includes(activeCategory)) {
+            setActiveCategory(data.list[0]);
+          }
         }
       } else {
         setDoc(doc(db, 'settings', 'menu_categories'), { list: ['Pastéis Gourmet Especiais', 'Bebidas'] })
@@ -275,7 +277,7 @@ export const ClientDashboard = ({
       }
     });
     return () => unsub();
-  }, []);
+  }, [activeCategory]);
 
   useEffect(() => {
     const q = query(collection(db, 'products'));
@@ -471,6 +473,72 @@ export const ClientDashboard = ({
     } catch (err) {
       console.error("Erro ao criar nova categoria:", err);
       alert("Erro ao criar nova categoria no servidor.");
+    }
+  };
+
+  const handleRenameCategory = async (oldCategoryName: string) => {
+    const newName = prompt(`Digite o novo nome para a categoria "${oldCategoryName}":`, oldCategoryName);
+    if (!newName || !newName.trim()) return;
+    const cleanNewName = newName.trim();
+    if (cleanNewName === oldCategoryName) return;
+
+    if (categories.some(c => c.toLowerCase() === cleanNewName.toLowerCase())) {
+      alert("Esta categoria já existe!");
+      return;
+    }
+
+    if (!window.confirm(`Você tem certeza de que deseja renomear a categoria "${oldCategoryName}" para "${cleanNewName}"?`)) {
+      return;
+    }
+
+    try {
+      const updatedList = categories.map(c => c === oldCategoryName ? cleanNewName : c);
+      await setDoc(doc(db, 'settings', 'menu_categories'), { list: updatedList });
+
+      const q = query(collection(db, 'products'), where('category', '==', oldCategoryName));
+      const querySnapshot = await getDocs(q);
+      const updatePromises = querySnapshot.docs.map(docSnap => 
+        updateDoc(doc(db, 'products', docSnap.id), { category: cleanNewName })
+      );
+      await Promise.all(updatePromises);
+
+      setActiveCategory(cleanNewName);
+      alert("Categoria renomeada com sucesso!");
+    } catch (err) {
+      console.error("Erro ao renomear categoria:", err);
+      alert("Erro ao renomear a categoria. Verifique suas permissões.");
+    }
+  };
+
+  const handleDeleteCategory = async (categoryToDelete: string) => {
+    if (categories.length <= 1) {
+      alert("Você deve ter pelo menos uma categoria no cardápio!");
+      return;
+    }
+
+    const confirmMessage = `Tem certeza de que deseja excluir a categoria "${categoryToDelete}"?\n\n` +
+      `ATENÇÃO: Todos os produtos/itens cadastrados nesta categoria serão excluídos permanentemente!`;
+      
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const updatedList = categories.filter(c => c !== categoryToDelete);
+      await setDoc(doc(db, 'settings', 'menu_categories'), { list: updatedList });
+
+      const q = query(collection(db, 'products'), where('category', '==', categoryToDelete));
+      const querySnapshot = await getDocs(q);
+      const deletePromises = querySnapshot.docs.map(docSnap => 
+        deleteDoc(doc(db, 'products', docSnap.id))
+      );
+      await Promise.all(deletePromises);
+
+      setActiveCategory(updatedList[0]);
+      alert("Categoria e seus itens foram excluídos com sucesso!");
+    } catch (err) {
+      console.error("Erro ao excluir categoria:", err);
+      alert("Erro ao excluir a categoria. Verifique suas permissões.");
     }
   };
 
@@ -1101,8 +1169,76 @@ export const ClientDashboard = ({
       <div className="client-grid">
         {/* Lista de Pastéis */}
         <div className="menu-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '0.5rem' }}>
-            <h3 style={{ margin: 0, border: 'none', padding: 0 }}>{activeCategory}</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', paddingBottom: '0.5rem', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0, border: 'none', padding: 0 }}>{activeCategory}</h3>
+              {canEdit && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleRenameCategory(activeCategory)}
+                    title="Renomear Categoria"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: 'var(--text-secondary)',
+                      borderRadius: '6px',
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--primary-gold)';
+                      e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+                      e.currentTarget.style.background = 'rgba(245, 158, 11, 0.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--text-secondary)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                    }}
+                  >
+                    <Edit2 size={12} />
+                    <span>Renomear</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCategory(activeCategory)}
+                    title="Excluir Categoria"
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.05)',
+                      border: '1px solid rgba(239, 68, 68, 0.15)',
+                      color: '#f87171',
+                      borderRadius: '6px',
+                      padding: '0.25rem 0.5rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.25rem',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(239, 68, 68, 0.05)';
+                      e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.15)';
+                    }}
+                  >
+                    <Trash2 size={12} />
+                    <span>Excluir</span>
+                  </button>
+                </div>
+              )}
+            </div>
             {canEdit && (
               <button 
                 type="button" 
