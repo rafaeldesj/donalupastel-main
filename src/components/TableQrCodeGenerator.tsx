@@ -201,8 +201,8 @@ export const TableQrCodeGenerator = () => {
       <body>
         <div class="grid">
           ${tables.map(table => {
-      const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-      const qrData = `${cleanBaseUrl}?mesa=${table}`;
+      const cleanBase = baseUrl.trim().replace(/\/+$/, '');
+      const qrData = `${cleanBase}/?mesa=${table}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrData)}&ecc=H`;
 
       return `
@@ -481,7 +481,7 @@ export const TableQrCodeGenerator = () => {
             {/* QR Mock */}
             <div style={{ position: 'relative', background: 'white', padding: '8px', borderRadius: '10px' }}>
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent((baseUrl.endsWith('/') ? baseUrl : baseUrl + '/') + '?mesa=1')}&ecc=H`}
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(baseUrl.trim().replace(/\/+$/, '') + '/?mesa=1')}&ecc=H`}
                 alt="QR Code Mock"
                 style={{ width: '130px', height: '130px', display: 'block' }}
               />
