@@ -1603,42 +1603,83 @@ export const ClientDashboard = ({
             )}
 
             {tableNumber && (
-              <div className="alert-box animate-fade-in" style={{
-                background: 'rgba(245, 158, 11, 0.08)',
-                borderLeft: '4px solid var(--primary-gold)',
-                color: 'var(--primary-gold)',
-                padding: '1rem 1.25rem',
-                borderRadius: '12px',
-                marginTop: '0.75rem',
-                fontSize: '0.92rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '1rem',
-                border: '1px solid rgba(245, 158, 11, 0.15)'
-              }}>
-                <div>
-                  🪑 <strong>Mesa Identificada:</strong> Você está na <strong>Mesa {tableNumber}</strong>. Seus pedidos serão entregues no salão diretamente para você!
+              orderType === 'dine_in_table' ? (
+                /* Caso Comer à Mesa: Exibe banner padrão */
+                <div className="alert-box animate-fade-in" style={{
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  borderLeft: '4px solid var(--primary-gold)',
+                  color: 'var(--primary-gold)',
+                  padding: '1rem 1.25rem',
+                  borderRadius: '12px',
+                  marginTop: '0.75rem',
+                  fontSize: '0.92rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  border: '1px solid rgba(245, 158, 11, 0.15)'
+                }}>
+                  <div>
+                    🪑 <strong>Mesa Identificada:</strong> Você está na <strong>Mesa {tableNumber}</strong>. Seus pedidos serão entregues no salão diretamente para você!
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleChangeTable}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--primary-gold)',
+                      color: 'var(--primary-gold)',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      transition: 'all 0.2s',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Troquei de Mesa
+                  </button>
                 </div>
-                <button 
-                  type="button" 
-                  onClick={handleChangeTable}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--primary-gold)',
-                    color: 'var(--primary-gold)',
-                    padding: '0.35rem 0.75rem',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    transition: 'all 0.2s',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  Troquei de Mesa
-                </button>
-              </div>
+              ) : (
+                /* Caso Escolha Outra Opção: Exibe aviso de que não será entregue na mesa */
+                <div className="alert-box animate-fade-in" style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  borderLeft: '4px solid #ef4444',
+                  color: '#ef4444',
+                  padding: '1rem 1.25rem',
+                  borderRadius: '12px',
+                  marginTop: '0.75rem',
+                  fontSize: '0.92rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  border: '1px solid rgba(239, 68, 68, 0.15)'
+                }}>
+                  <div>
+                    ⚠️ <strong>Aviso:</strong> Você escaneou a <strong>Mesa {tableNumber}</strong>, mas escolheu outra opção. Seu pedido <strong>NÃO</strong> será servido na mesa!
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setOrderType('dine_in_table')}
+                    style={{
+                      background: 'none',
+                      border: '1px solid #ef4444',
+                      color: '#ef4444',
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      transition: 'all 0.2s',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Comer na Mesa {tableNumber}
+                  </button>
+                </div>
+              )
             )}
           </div>
 
