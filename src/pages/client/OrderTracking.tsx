@@ -720,7 +720,7 @@ export const OrderTracking = () => {
       case 'preparing': return 'Sendo preparado';
       case 'ready': 
         if (orderType === 'delivery') return 'Pronto na expedição';
-        if (orderType === 'dine_in') return 'Pronto! Servido na mesa.';
+        if (orderType === 'dine_in' || orderType === 'dine_in_table') return 'Pronto! Servido na mesa.';
         return 'Aguardando retirada no balcão!';
       case 'delivering': return 'Saiu para entrega';
       case 'completed': return 'Finalizado com sucesso';
@@ -852,11 +852,11 @@ export const OrderTracking = () => {
                           {order.address?.complement && <span style={{ fontStyle: 'italic' }}> - {order.address.complement}</span>}
                         </p>
                       </div>
-                    ) : order.orderType === 'dine_in' ? (
+                    ) : (order.orderType === 'dine_in' || order.orderType === 'dine_in_table') ? (
                       <div>
                         <strong>Consumo no Local (Salão):</strong>
                         <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>
-                          O seu pedido será servido nas mesas da Dona Lu Pastelaria (Rua Jícara, 239 - Campo Grande). Pode vir vindo!
+                          O seu pedido será servido nas mesas da Dona Lu Pastelaria {order.tableNumber ? `(Mesa ${order.tableNumber})` : ''} (Rua Jícara, 239 - Campo Grande). Pode vir vindo!
                         </p>
                       </div>
                     ) : (

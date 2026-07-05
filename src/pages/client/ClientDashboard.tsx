@@ -222,6 +222,7 @@ export const ClientDashboard = ({
   const [deliveryAddress, setDeliveryAddress] = useState<MapAddress | null>(null);
   const [routeDistance, setRouteDistance] = useState<number | null>(null);
   const [orderType, setOrderType] = useState<'pickup' | 'delivery' | 'dine_in' | 'dine_in_table'>('pickup');
+  const [tableNumber, setTableNumber] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
   const [changeFor, setChangeFor] = useState('');
   const [noChangeNeeded, setNoChangeNeeded] = useState(false);
@@ -259,6 +260,22 @@ export const ClientDashboard = ({
       }
     };
     fetchStoreConfig();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mesa = params.get('mesa') || params.get('table');
+    if (mesa) {
+      setTableNumber(mesa);
+      setOrderType('dine_in_table');
+      sessionStorage.setItem('donalu_mesa', mesa);
+    } else {
+      const savedMesa = sessionStorage.getItem('donalu_mesa');
+      if (savedMesa) {
+        setTableNumber(savedMesa);
+        setOrderType('dine_in_table');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -683,6 +700,7 @@ export const ClientDashboard = ({
       status: 'preparing',
       createdAt: new Date().toISOString(),
       orderType,
+      tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
       paymentMethod: 'pix',
       mercadoPagoPaymentId: pixPaymentId,
       dailySeq,
@@ -885,6 +903,7 @@ export const ClientDashboard = ({
         status: finalStatus,
         createdAt: new Date().toISOString(),
         orderType,
+        tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
         paymentMethod,
         changeFor: paymentMethod === 'dinheiro' && changeFor ? parseFloat(changeFor.replace(',', '.')) : null,
         dailySeq,
@@ -1018,6 +1037,51 @@ export const ClientDashboard = ({
           )}
         </div>
       </div>
+
+      {tableNumber && (
+        <div className="alert-box animate-fade-in" style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          borderLeft: '4px solid var(--primary-gold)',
+          color: 'var(--primary-gold)',
+          padding: '1rem 1.25rem',
+          borderRadius: '12px',
+          marginBottom: '1.5rem',
+          fontSize: '0.92rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '1rem',
+          border: '1px solid rgba(245, 158, 11, 0.15)'
+        }}>
+          <div>
+            🪑 <strong>Mesa Identificada:</strong> Você está na <strong>Mesa {tableNumber}</strong>. Seus pedidos serão entregues no salão diretamente para você!
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              if (window.confirm("Deseja realmente desvincular seu celular desta mesa?")) {
+                setTableNumber(null);
+                sessionStorage.removeItem('donalu_mesa');
+                setOrderType('pickup');
+              }
+            }}
+            style={{
+              background: 'none',
+              border: '1px solid var(--primary-gold)',
+              color: 'var(--primary-gold)',
+              padding: '0.35rem 0.75rem',
+              borderRadius: '8px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Liberar Mesa
+          </button>
+        </div>
+      )}
 
       {isStoreClosed && (
         <div className="animate-fade-in" style={{
@@ -1560,7 +1624,7 @@ export const ClientDashboard = ({
                 )}
                 {orderType === 'dine_in_table' && (
                   <div style={{ color: 'var(--primary-gold)', marginTop: '0.25rem', fontWeight: 600 }}>
-                    🪑 Seu pedido será servido na mesa!
+                    🪑 Seu pedido será servido na mesa {tableNumber || ''}!
                   </div>
                 )}
               </div>

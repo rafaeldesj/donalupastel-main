@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { User, Store, Shield, CreditCard, Save, Trash2, Clock, MapPin, AlertCircle, History, FileText, KeyRound, Plus, Camera } from 'lucide-react';
+import { User, Store, Shield, CreditCard, Save, Trash2, Clock, MapPin, AlertCircle, History, FileText, KeyRound, Plus, Camera, QrCode } from 'lucide-react';
 import { logAuditAction } from '../utils/audit';
 import { SecurityCameraSettings } from '../components/SecurityCameraSettings';
+import { TableQrCodeGenerator } from '../components/TableQrCodeGenerator';
 
 interface StoreConfig {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export const SettingsPage = () => {
   const { user, userData, updatePhoneNumber } = useAuth();
   
   // Tabs state: 'profile' (all) | 'store' (admin) | 'loyalty' (admin) | 'advanced' (dev) | 'audit_logs' (admin) | 'commissions' | 'security'
-  const [activeTab, setActiveTab] = useState<'profile' | 'store' | 'loyalty' | 'advanced' | 'audit_logs' | 'commissions' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'store' | 'loyalty' | 'advanced' | 'audit_logs' | 'commissions' | 'security' | 'mesas'>('profile');
   
   const role = userData?.role || 'client';
   const isAdmin = ['developer', 'owner', 'manager'].includes(role);
@@ -593,6 +594,29 @@ export const SettingsPage = () => {
                 <Shield size={16} />
                 <span>Regras & Fidelidade</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('mesas')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.85rem 1rem',
+                  borderRadius: '12px',
+                  border: activeTab === 'mesas' ? '1px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.05)',
+                  background: activeTab === 'mesas' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)',
+                  color: activeTab === 'mesas' ? 'var(--primary-gold)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  transition: 'all 0.2s',
+                  textAlign: 'left'
+                }}
+              >
+                <QrCode size={16} />
+                <span>Mesas & QR Codes</span>
+              </button>
             </>
           )}
 
@@ -700,6 +724,11 @@ export const SettingsPage = () => {
         {/* Formulários de Configurações */}
         <main className="loyalty-card" style={{ padding: '2rem', textAlign: 'left' }}>
           
+          {/* Aba Mesas & QR Codes */}
+          {activeTab === 'mesas' && isAdmin && (
+            <TableQrCodeGenerator />
+          )}
+
           {/* Aba 1: Meu Perfil */}
           {activeTab === 'profile' && (
             <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
