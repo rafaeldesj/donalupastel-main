@@ -570,6 +570,21 @@ export const ClientDashboard = ({
     }
   };
 
+  const handleChangeTable = () => {
+    const input = window.prompt("Para qual mesa você mudou? (Digite o número da nova mesa de 1 a 99)");
+    if (input === null) return;
+    const cleaned = input.trim();
+    const num = parseInt(cleaned);
+    if (!isNaN(num) && num >= 1 && num <= 99) {
+      setTableNumber(cleaned);
+      sessionStorage.setItem('donalu_mesa', cleaned);
+      setOrderType('dine_in_table');
+      window.alert("Ok, sua mesa foi atualizada com sucesso!");
+    } else {
+      window.alert("Por favor, digite um número de mesa válido (1 a 99).");
+    }
+  };
+
   const addToCart = (item: typeof defaultPastels[0]) => {
     if (isVisitor) {
       if (onLoginRequired) {
@@ -1038,50 +1053,7 @@ export const ClientDashboard = ({
         </div>
       </div>
 
-      {tableNumber && (
-        <div className="alert-box animate-fade-in" style={{
-          background: 'rgba(245, 158, 11, 0.08)',
-          borderLeft: '4px solid var(--primary-gold)',
-          color: 'var(--primary-gold)',
-          padding: '1rem 1.25rem',
-          borderRadius: '12px',
-          marginBottom: '1.5rem',
-          fontSize: '0.92rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '1rem',
-          border: '1px solid rgba(245, 158, 11, 0.15)'
-        }}>
-          <div>
-            🪑 <strong>Mesa Identificada:</strong> Você está na <strong>Mesa {tableNumber}</strong>. Seus pedidos serão entregues no salão diretamente para você!
-          </div>
-          <button 
-            type="button" 
-            onClick={() => {
-              if (window.confirm("Deseja realmente desvincular seu celular desta mesa?")) {
-                setTableNumber(null);
-                sessionStorage.removeItem('donalu_mesa');
-                setOrderType('pickup');
-              }
-            }}
-            style={{
-              background: 'none',
-              border: '1px solid var(--primary-gold)',
-              color: 'var(--primary-gold)',
-              padding: '0.35rem 0.75rem',
-              borderRadius: '8px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontSize: '0.8rem',
-              transition: 'all 0.2s',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Liberar Mesa
-          </button>
-        </div>
-      )}
+
 
       {isStoreClosed && (
         <div className="animate-fade-in" style={{
@@ -1627,6 +1599,45 @@ export const ClientDashboard = ({
                     🪑 Seu pedido será servido na mesa {tableNumber || ''}!
                   </div>
                 )}
+              </div>
+            )}
+
+            {tableNumber && (
+              <div className="alert-box animate-fade-in" style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                borderLeft: '4px solid var(--primary-gold)',
+                color: 'var(--primary-gold)',
+                padding: '1rem 1.25rem',
+                borderRadius: '12px',
+                marginTop: '0.75rem',
+                fontSize: '0.92rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '1rem',
+                border: '1px solid rgba(245, 158, 11, 0.15)'
+              }}>
+                <div>
+                  🪑 <strong>Mesa Identificada:</strong> Você está na <strong>Mesa {tableNumber}</strong>. Seus pedidos serão entregues no salão diretamente para você!
+                </div>
+                <button 
+                  type="button" 
+                  onClick={handleChangeTable}
+                  style={{
+                    background: 'none',
+                    border: '1px solid var(--primary-gold)',
+                    color: 'var(--primary-gold)',
+                    padding: '0.35rem 0.75rem',
+                    borderRadius: '8px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                    transition: 'all 0.2s',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Troquei de Mesa
+                </button>
               </div>
             )}
           </div>
