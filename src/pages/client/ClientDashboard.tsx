@@ -248,6 +248,22 @@ export const ClientDashboard = ({
   const [pixPaymentId, setPixPaymentId] = useState('');
   const [pixPaymentStatus, setPixPaymentStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
 
+  // States for closing table bill
+  const [showCloseBillModal, setShowCloseBillModal] = useState(false);
+  const [tableOrders, setTableOrders] = useState<any[]>([]);
+  const [loadingBill, setLoadingBill] = useState(false);
+  const [billPaymentMethod, setBillPaymentMethod] = useState<'pix' | 'credito' | 'dinheiro' | 'debito'>('pix');
+  const [billChangeFor, setBillChangeFor] = useState('');
+  const [billNoChangeNeeded, setBillNoChangeNeeded] = useState(false);
+  const [billSubmitting, setBillSubmitting] = useState(false);
+  const [billError, setBillError] = useState<string | null>(null);
+  
+  const [showBillPixLightbox, setShowBillPixLightbox] = useState(false);
+  const [billPixQrCode, setBillPixQrCode] = useState('');
+  const [billPixQrCodeBase64, setBillPixQrCodeBase64] = useState('');
+  const [billPixPaymentId, setBillPixPaymentId] = useState<number | null>(null);
+  const [billPixPaymentStatus, setBillPixPaymentStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+
   useEffect(() => {
     const fetchStoreConfig = async () => {
       try {
@@ -261,6 +277,286 @@ export const ClientDashboard = ({
     };
     fetchStoreConfig();
   }, []);
+
+  // Verifica status do pagamento Pix do fechamento de conta periodicamente
+  useEffect(() => {
+    if (!billPixPaymentId || billPixPaymentStatus !== 'pending') return;
+
+    let token = storeConfig?.storeOwnerAccessToken || storeConfig?.devAccessToken || 'mock';
+    if (token === 'null' || token === 'undefined' || !token) {
+      token = 'mock';
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/pagamentos/check-pix?paymentId=${billPixPaymentId}&token=${token}`);
+        const result = await res.json();
+        if (result.status === 'approved') {
+          setBillPixPaymentStatus('approved');
+          clearInterval(interval);
+
+          const unpaid = tableOrders.filter(o => 
+            o.paymentMethod === 'pagar_final' || 
+            o.paymentMethod === 'dinheiro' || 
+            o.paymentMethod === 'debito'
+          );
+          
+          const batchPromises = unpaid.map(order => 
+            updateDoc(doc(db, 'orders', order.id), {
+              status: 'completed',
+              updatedAt: new Date().toISOString()
+            })
+          );
+          await Promise.all(batchPromises);
+
+          if (tableNumber) {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where('tableNumber', '==', tableNumber));
+            const querySnapshot = await getDocs(q);
+            const userPromises = querySnapshot.docs.map(userDoc => 
+              updateDoc(doc(db, 'users', userDoc.id), {
+                tableNumber: null,
+                updatedAt: new Date().toISOString()
+              })
+            );
+            await Promise.all(userPromises);
+          }
+
+          alert("Conta fechada e paga com sucesso!");
+          setShowBillPixLightbox(false);
+          setShowCloseBillModal(false);
+        } else if (result.status === 'rejected') {
+          setBillPixPaymentStatus('rejected');
+          clearInterval(interval);
+          alert("O pagamento via Pix foi recusado.");
+        }
+      } catch (err) {
+        console.error("Erro ao verificar Pix de fechamento:", err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [billPixPaymentId, billPixPaymentStatus, tableOrders, tableNumber, storeConfig]);
+
+  const handleOpenCloseBillModal = async () => {
+    if (!tableNumber) {
+      alert("Mesa não identificada.");
+      return;
+    }
+    setLoadingBill(true);
+    setBillError(null);
+    setShowCloseBillModal(true);
+
+    try {
+      const q = query(
+        collection(db, 'orders'),
+        where('tableNumber', '==', tableNumber),
+        where('orderType', '==', 'dine_in_table')
+      );
+      const querySnapshot = await getDocs(q);
+      const fetchedOrders: any[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        if (d.status !== 'completed' && d.status !== 'cancelled') {
+          fetchedOrders.push({ id: docSnap.id, ...d });
+        }
+      });
+      setTableOrders(fetchedOrders);
+    } catch (err: any) {
+      console.error("Erro ao carregar conta da mesa:", err);
+      setBillError("Não foi possível carregar os pedidos da mesa.");
+    } finally {
+      setLoadingBill(false);
+    }
+  };
+
+  const handleCloseBillPix = async () => {
+    setBillError(null);
+    setBillSubmitting(true);
+
+    try {
+      const unpaid = tableOrders.filter(o => 
+        o.paymentMethod === 'pagar_final' || 
+        o.paymentMethod === 'dinheiro' || 
+        o.paymentMethod === 'debito'
+      );
+      const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
+
+      let token = storeConfig?.storeOwnerAccessToken || storeConfig?.devAccessToken || 'mock';
+      if (token === 'null' || token === 'undefined' || !token) {
+        token = 'mock';
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/pagamentos/create-pix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          amount: amountToPay,
+          email: user?.email || 'cliente@email.com',
+          name: user?.displayName || user?.email || 'Cliente',
+          cpf: userData?.cpf || '45678912364'
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Erro ao gerar Pix no Mercado Pago.');
+      }
+
+      setBillPixPaymentId(result.paymentId);
+      setBillPixQrCode(result.qrCode);
+      setBillPixQrCodeBase64(result.qrCodeBase64);
+      setBillPixPaymentStatus('pending');
+      setShowBillPixLightbox(true);
+    } catch (err: any) {
+      console.error(err);
+      setBillError(err.message || "Erro ao gerar Pix. Tente novamente.");
+    } finally {
+      setBillSubmitting(false);
+    }
+  };
+
+  const handleCloseBillCreditCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBillError(null);
+    setBillSubmitting(true);
+
+    try {
+      const unpaid = tableOrders.filter(o => 
+        o.paymentMethod === 'pagar_final' || 
+        o.paymentMethod === 'dinheiro' || 
+        o.paymentMethod === 'debito'
+      );
+      const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
+
+      const isUsingSavedCard = useSavedCard && !!userData?.pagbank_card_token;
+      let encryptedCardToken = '';
+
+      if (!isUsingSavedCard) {
+        if (!(window as any).PagSeguro) {
+          throw new Error('O SDK do PagBank não pôde ser carregado. Por favor, recarregue a página.');
+        }
+
+        if (!cardNumber || !cardHolder || !cardExpiry || !cardCvv || !clientCpf) {
+          throw new Error('Por favor, preencha todos os campos do cartão e o CPF.');
+        }
+
+        const cleanedExpiry = cardExpiry.replace(/\s+/g, '').replace('/', '');
+        const expMonth = cleanedExpiry.slice(0, 2);
+        const expYear = '20' + cleanedExpiry.slice(2, 4);
+
+        const card = (window as any).PagSeguro.encryptCard({
+          publicKey: "MC0yM2UzNDFjNy04ZDNmLTQyZTUtYmJjYy05YjA3YTEyODNhM2U=",
+          holder: cardHolder,
+          number: cardNumber.replace(/\s+/g, ''),
+          expMonth: expMonth,
+          expYear: expYear,
+          cvv: cardCvv
+        });
+
+        if (card.hasErrors) {
+          console.error(card.errors);
+          throw new Error('Dados do cartão inválidos. Verifique os campos informados.');
+        }
+
+        encryptedCardToken = card.encryptedCard;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/pagamentos/process-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          encryptedCard: isUsingSavedCard ? undefined : encryptedCardToken,
+          cpf: isUsingSavedCard ? undefined : clientCpf.replace(/\D/g, ''),
+          saveCard: isUsingSavedCard ? false : saveCardConsent,
+          orderTotal: amountToPay,
+          clientName: user?.displayName || user?.email || 'Cliente',
+          clientEmail: user?.email || '',
+          useSavedCard: isUsingSavedCard,
+          savedCustomerId: userData?.pagbank_customer_id || undefined,
+          savedCardToken: userData?.pagbank_card_token || undefined
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Falha no pagamento do PagBank.');
+      }
+
+      if (!isUsingSavedCard && saveCardConsent && result.card) {
+        const userDocRef = doc(db, 'users', user!.uid);
+        await updateDoc(userDocRef, {
+          cpf: clientCpf.replace(/\D/g, ''),
+          pagbank_customer_id: result.card.customer_id,
+          pagbank_card_token: result.card.card_token,
+          pagbank_card_brand: result.card.brand,
+          pagbank_card_last_digits: result.card.last_digits,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      const batchPromises = unpaid.map(order => 
+        updateDoc(doc(db, 'orders', order.id), {
+          status: 'completed',
+          updatedAt: new Date().toISOString()
+        })
+      );
+      await Promise.all(batchPromises);
+
+      if (tableNumber) {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('tableNumber', '==', tableNumber));
+        const querySnapshot = await getDocs(q);
+        const userPromises = querySnapshot.docs.map(userDoc => 
+          updateDoc(doc(db, 'users', userDoc.id), {
+            tableNumber: null,
+            updatedAt: new Date().toISOString()
+          })
+        );
+        await Promise.all(userPromises);
+      }
+
+      alert("Conta fechada e paga com sucesso via cartão de crédito!");
+      setShowCloseBillModal(false);
+    } catch (err: any) {
+      console.error(err);
+      setBillError(err.message || "Erro ao processar o pagamento. Tente novamente.");
+    } finally {
+      setBillSubmitting(false);
+    }
+  };
+
+  const handleCloseBillCashier = async () => {
+    setBillError(null);
+    setBillSubmitting(true);
+
+    try {
+      const unpaid = tableOrders.filter(o => 
+        o.paymentMethod === 'pagar_final' || 
+        o.paymentMethod === 'dinheiro' || 
+        o.paymentMethod === 'debito'
+      );
+
+      const batchPromises = unpaid.map(order => 
+        updateDoc(doc(db, 'orders', order.id), {
+          status: 'aguardando_caixa',
+          paymentMethod: billPaymentMethod,
+          changeFor: billPaymentMethod === 'dinheiro' && billChangeFor ? parseFloat(billChangeFor.replace(',', '.')) : null,
+          updatedAt: new Date().toISOString()
+        })
+      );
+      await Promise.all(batchPromises);
+
+      alert(`Solicitação de fechamento enviada ao Caixa! Por favor, dirija-se ao balcão para pagar em ${billPaymentMethod === 'dinheiro' ? 'Dinheiro' : 'Débito'}.`);
+      setShowCloseBillModal(false);
+    } catch (err: any) {
+      console.error(err);
+      setBillError(err.message || "Erro ao enviar solicitação ao Caixa.");
+    } finally {
+      setBillSubmitting(false);
+    }
+  };
 
   const checkReservationAndSetTable = async (tableId: string) => {
     try {
@@ -2075,6 +2371,34 @@ export const ClientDashboard = ({
               <span>🛒 Ver Resumo do Pedido</span>
             </button>
           </form>
+
+          {orderType === 'dine_in_table' && tableNumber && (
+            <button
+              type="button"
+              onClick={handleOpenCloseBillModal}
+              className="auth-btn"
+              style={{
+                marginTop: '0.6rem',
+                padding: '0.7rem',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '10px',
+                width: '100%',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <span>🧾 Fechar minha Conta e Pagar</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -2594,6 +2918,441 @@ export const ClientDashboard = ({
             </button>
             {/* Espaçador para garantir respiro no final da rolagem no celular */}
             <div style={{ minHeight: '0.5rem', height: '0.5rem', flexShrink: 0 }} />
+          </div>
+        </div>
+      )}
+
+      {showCloseBillModal && (
+        <div
+          className="lightbox-overlay"
+          onClick={() => !billSubmitting && setShowCloseBillModal(false)}
+          style={{ zIndex: 2000, alignItems: 'center', justifyContent: 'center', display: 'flex', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)' }}
+        >
+          <div
+            className="lightbox-content animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '450px',
+              maxWidth: '92%',
+              background: '#0d1527',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '1.25rem',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              color: '#fff',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+          >
+            {/* Cabeçalho */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                🧾 Conta da Mesa {tableNumber}
+              </h3>
+              <button
+                type="button"
+                onClick={() => !billSubmitting && setShowCloseBillModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#9ca3af', fontSize: '1.2rem', cursor: 'pointer' }}
+                disabled={billSubmitting}
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingBill ? (
+              <div style={{ padding: '2rem 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                <span className="spinner"></span>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Carregando dados da conta...</span>
+              </div>
+            ) : billError ? (
+              <div className="auth-error-message">{billError}</div>
+            ) : tableOrders.length === 0 ? (
+              <div style={{ padding: '1.5rem 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', fontStyle: 'italic', textAlign: 'center' }}>
+                  Nenhum pedido ativo encontrado para esta mesa.
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (tableNumber && user) {
+                      const userDocRef = doc(db, 'users', user.uid);
+                      await updateDoc(userDocRef, { tableNumber: null, updatedAt: new Date().toISOString() });
+                      setTableNumber(null);
+                      setOrderType('pickup');
+                      sessionStorage.removeItem('donalu_mesa');
+                    }
+                    setShowCloseBillModal(false);
+                  }}
+                  className="auth-btn"
+                  style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', width: 'auto', background: 'rgba(255,255,255,0.06)' }}
+                >
+                  Liberar Mesa
+                </button>
+              </div>
+            ) : (() => {
+              const totalConsumed = tableOrders.reduce((sum, o) => sum + o.total, 0);
+              
+              const paidOrders = tableOrders.filter(o => o.paymentMethod === 'pix' || o.paymentMethod === 'credito');
+              const totalPaidOnline = paidOrders.reduce((sum, o) => sum + o.total, 0);
+
+              const unpaidOrders = tableOrders.filter(o => 
+                o.paymentMethod === 'pagar_final' || 
+                o.paymentMethod === 'dinheiro' || 
+                o.paymentMethod === 'debito'
+              );
+              const totalToPay = unpaidOrders.reduce((sum, o) => sum + o.total, 0);
+
+              return (
+                <>
+                  {/* Lista de Pedidos */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                    <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pedidos Realizados</span>
+                    {tableOrders.map((order) => {
+                      const isPaid = order.paymentMethod === 'pix' || order.paymentMethod === 'credito';
+                      return (
+                        <div key={order.id} style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '10px', fontSize: '0.82rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                            <span style={{ fontWeight: 700 }}>Pedido #{order.dailySeq || '---'}</span>
+                            <span style={{ fontWeight: 700, color: isPaid ? '#10b981' : 'var(--primary-gold)' }}>
+                              R$ {order.total.toFixed(2).replace('.', ',')} {isPaid ? '(Pago)' : '(Pagar no Final)'}
+                            </span>
+                          </div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
+                            {order.items.map((item: any, idx: number) => (
+                              <div key={idx}>{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</div>
+                            ))}
+                            {(order.serviceFee ?? 0) > 0 && (
+                              <div style={{ fontStyle: 'italic', color: 'var(--primary-gold)' }}>🪑 Taxa de Serviço (10%): R$ {order.serviceFee.toFixed(2).replace('.', ',')}</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Resumo Financeiro */}
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                      <span>Consumido Total:</span>
+                      <span>R$ {totalConsumed.toFixed(2).replace('.', ',')}</span>
+                    </div>
+                    {totalPaidOnline > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#10b981', marginBottom: '0.25rem' }}>
+                        <span>Pago Online (Pix/Crédito):</span>
+                        <span>- R$ {totalPaidOnline.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 700, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '0.4rem', marginTop: '0.4rem' }}>
+                      <span>Saldo Pendente a Pagar:</span>
+                      <span style={{ color: 'var(--primary-gold)' }}>R$ {totalToPay.toFixed(2).replace('.', ',')}</span>
+                    </div>
+                  </div>
+
+                  {totalToPay <= 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'center', marginTop: '0.5rem' }}>
+                      <p style={{ margin: 0, fontSize: '0.88rem', color: '#10b981', fontWeight: 600 }}>
+                        ✓ Todos os seus pedidos já estão pagos!
+                      </p>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (tableNumber && user) {
+                            const userDocRef = doc(db, 'users', user.uid);
+                            await updateDoc(userDocRef, { tableNumber: null, updatedAt: new Date().toISOString() });
+                            setTableNumber(null);
+                            setOrderType('pickup');
+                            sessionStorage.removeItem('donalu_mesa');
+                          }
+                          setShowCloseBillModal(false);
+                        }}
+                        className="auth-btn"
+                        style={{
+                          padding: '0.6rem',
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          fontWeight: 700
+                        }}
+                      >
+                        Liberar Mesa e Sair
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Seleção de Pagamento */}
+                      <div>
+                        <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' }}>Pagar Saldo Devedor Via</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                          {([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const).map(([val, label]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => {
+                                setBillPaymentMethod(val);
+                                setBillChangeFor('');
+                                setBillNoChangeNeeded(false);
+                              }}
+                              style={{
+                                padding: '0.5rem',
+                                borderRadius: '8px',
+                                border: billPaymentMethod === val ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.06)',
+                                background: billPaymentMethod === val ? 'rgba(245,158,11,0.1)' : 'rgba(255,255,255,0.02)',
+                                color: billPaymentMethod === val ? 'var(--primary-gold)' : 'var(--text-secondary)',
+                                fontWeight: billPaymentMethod === val ? 700 : 400,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Configuração de Troco */}
+                      {billPaymentMethod === 'dinheiro' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', background: 'rgba(255,255,255,0.02)', padding: '0.6rem', borderRadius: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <input
+                              type="checkbox"
+                              id="bill-no-change-needed"
+                              checked={billNoChangeNeeded}
+                              onChange={(e) => {
+                                setBillNoChangeNeeded(e.target.checked);
+                                if (e.target.checked) setBillChangeFor('');
+                              }}
+                              style={{ width: '15px', height: '15px', accentColor: 'var(--primary-gold)' }}
+                            />
+                            <label htmlFor="bill-no-change-needed" style={{ fontSize: '0.8rem', cursor: 'pointer' }}>Não preciso de troco</label>
+                          </div>
+                          {!billNoChangeNeeded && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Troco para quanto?</label>
+                              <input
+                                type="text"
+                                className="pastel-edit-input"
+                                placeholder="Ex: 50"
+                                value={billChangeFor}
+                                onChange={(e) => setBillChangeFor(e.target.value.replace(/\D/g, ''))}
+                                style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* PagBank Cartão de Crédito */}
+                      {billPaymentMethod === 'credito' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', padding: '0.6rem', borderRadius: '10px' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--primary-gold)', fontWeight: 600 }}>💳 Informações do Cartão de Crédito (PagBank)</span>
+                          {userData?.pagbank_card_token && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                              <input
+                                type="checkbox"
+                                id="bill-use-saved-card"
+                                checked={useSavedCard}
+                                onChange={(e) => setUseSavedCard(e.target.checked)}
+                                style={{ width: '15px', height: '15px', accentColor: 'var(--primary-gold)' }}
+                              />
+                              <label htmlFor="bill-use-saved-card" style={{ fontSize: '0.78rem', cursor: 'pointer' }}>
+                                Usar meu cartão salvo (final {userData.pagbank_card_last_digits})
+                              </label>
+                            </div>
+                          )}
+                          {(!useSavedCard || !userData?.pagbank_card_token) && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Número do Cartão</label>
+                                <input
+                                  type="text"
+                                  className="pastel-edit-input"
+                                  placeholder="0000 0000 0000 0000"
+                                  value={cardNumber}
+                                  onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1 '))}
+                                  maxLength={19}
+                                  style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                                />
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Nome no Cartão</label>
+                                <input
+                                  type="text"
+                                  className="pastel-edit-input"
+                                  placeholder="Nome impresso"
+                                  value={cardHolder}
+                                  onChange={(e) => setCardHolder(e.target.value)}
+                                  style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                                />
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Validade (MM/AA)</label>
+                                  <input
+                                    type="text"
+                                    className="pastel-edit-input"
+                                    placeholder="MM/AA"
+                                    value={cardExpiry}
+                                    onChange={(e) => {
+                                      let v = e.target.value.replace(/\D/g, '');
+                                      if (v.length > 2) v = v.substring(0, 2) + '/' + v.substring(2, 4);
+                                      setCardExpiry(v);
+                                    }}
+                                    maxLength={5}
+                                    style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>CVV</label>
+                                  <input
+                                    type="text"
+                                    className="pastel-edit-input"
+                                    placeholder="123"
+                                    value={cardCvv}
+                                    onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
+                                    maxLength={4}
+                                    style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                                  />
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <label style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>CPF do Titular</label>
+                                <input
+                                  type="text"
+                                  className="pastel-edit-input"
+                                  placeholder="CPF do proprietário do cartão"
+                                  value={clientCpf}
+                                  onChange={(e) => {
+                                    let v = e.target.value.replace(/\D/g, '');
+                                    if (v.length <= 11) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+                                    setClientCpf(v);
+                                  }}
+                                  maxLength={14}
+                                  style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                                />
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.2rem' }}>
+                                <input
+                                  type="checkbox"
+                                  id="bill-save-card"
+                                  checked={saveCardConsent}
+                                  onChange={(e) => setSaveCardConsent(e.target.checked)}
+                                  style={{ width: '15px', height: '15px', accentColor: 'var(--primary-gold)' }}
+                                />
+                                <label htmlFor="bill-save-card" style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>Salvar cartão para futuras compras</label>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Botão de Submissão */}
+                      {billPaymentMethod === 'pix' ? (
+                        <button
+                          type="button"
+                          onClick={handleCloseBillPix}
+                          disabled={billSubmitting}
+                          className="auth-btn"
+                          style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', fontWeight: 700, padding: '0.7rem' }}
+                        >
+                          {billSubmitting ? 'Gerando Pix...' : `Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')} via Pix`}
+                        </button>
+                      ) : billPaymentMethod === 'credito' ? (
+                        <button
+                          type="button"
+                          onClick={(e) => handleCloseBillCreditCard(e)}
+                          disabled={billSubmitting}
+                          className="auth-btn"
+                          style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', fontWeight: 700, padding: '0.7rem' }}
+                        >
+                          {billSubmitting ? 'Processando Cartão...' : `Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')} via Cartão`}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleCloseBillCashier}
+                          disabled={billSubmitting || (billPaymentMethod === 'dinheiro' && !billNoChangeNeeded && billChangeFor.trim() === '')}
+                          className="auth-btn"
+                          style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', fontWeight: 700, padding: '0.7rem' }}
+                        >
+                          {billSubmitting ? 'Enviando...' : `Chamar Caixa para Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')}`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox do Pix para Fechamento de Conta */}
+      {showBillPixLightbox && (
+        <div
+          className="lightbox-overlay"
+          style={{ zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)' }}
+          onClick={() => setShowBillPixLightbox(false)}
+        >
+          <div
+            className="lightbox-content animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '380px',
+              maxWidth: '92%',
+              background: '#0d1527',
+              borderRadius: '16px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '1.25rem',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              color: '#fff'
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: '1.15rem' }}>🔑 Pagamento via Pix (Mesa {tableNumber})</h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Escaneie o QR Code abaixo com o aplicativo do seu banco ou copie o código Pix.
+            </p>
+            {billPixQrCodeBase64 ? (
+              <img
+                src={`data:image/png;base64,${billPixQrCodeBase64}`}
+                alt="Pix QR Code"
+                style={{ width: '180px', height: '180px', margin: '0 auto', borderRadius: '8px', background: '#fff', padding: '6px' }}
+              />
+            ) : (
+              <div style={{ height: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="spinner"></span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(billPixQrCode);
+                alert('Código Pix copiado com sucesso!');
+              }}
+              className="auth-btn"
+              style={{ padding: '0.5rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.06)' }}
+            >
+              Copiar Código Pix
+            </button>
+            <div style={{ fontSize: '0.8rem', color: 'var(--primary-gold)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+              <span className="spinner" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></span>
+              Aguardando confirmação de pagamento...
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowBillPixLightbox(false)}
+              className="auth-btn btn-danger"
+              style={{ padding: '0.5rem', fontSize: '0.85rem' }}
+            >
+              Voltar
+            </button>
           </div>
         </div>
       )}
