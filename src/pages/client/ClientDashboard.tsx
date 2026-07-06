@@ -683,10 +683,10 @@ export const ClientDashboard = ({
       const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
 
       const paymentsClient = new (window as any).google.payments.api.PaymentsClient({
-        environment: import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION'
+        environment: 'TEST'
       });
 
-      const isProduction = (import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION') === 'PRODUCTION';
+      const isProduction = false;
 
       const paymentDataRequest = {
         apiVersion: 2,
@@ -700,8 +700,8 @@ export const ClientDashboard = ({
           tokenizationSpecification: {
             type: 'PAYMENT_GATEWAY',
             parameters: {
-              gateway: import.meta.env.VITE_GOOGLE_PAY_GATEWAY || 'pagseguro',
-              gatewayMerchantId: import.meta.env.VITE_PAGSEG_MERCHANT_ID || 'exemplo_id_pagseguro'
+              gateway: 'example',
+              gatewayMerchantId: 'exampleGatewayMerchantId'
             }
           }
         }],
@@ -1439,10 +1439,10 @@ export const ClientDashboard = ({
         }
 
         const paymentsClient = new (window as any).google.payments.api.PaymentsClient({
-          environment: import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION'
+          environment: 'TEST'
         });
 
-        const isProduction = (import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION') === 'PRODUCTION';
+        const isProduction = false;
 
         const paymentDataRequest = {
           apiVersion: 2,
@@ -1456,8 +1456,8 @@ export const ClientDashboard = ({
             tokenizationSpecification: {
               type: 'PAYMENT_GATEWAY',
               parameters: {
-                gateway: import.meta.env.VITE_GOOGLE_PAY_GATEWAY || 'pagseguro',
-                gatewayMerchantId: import.meta.env.VITE_PAGSEG_MERCHANT_ID || 'exemplo_id_pagseguro'
+                gateway: 'example',
+                gatewayMerchantId: 'exampleGatewayMerchantId'
               }
             }
           }],

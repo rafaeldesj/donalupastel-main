@@ -788,6 +788,30 @@ export const OrderTracking = () => {
     return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  const getPaymentLabel = (method: string | null | undefined) => {
+    if (!method) return 'Pendente ⏳';
+    const labels: Record<string, string> = {
+      pix: 'Pix 🟡',
+      credito: 'Cartão de Crédito 💳',
+      google_pay: 'Google Pay 📱',
+      debito: 'Cartão de Débito 💴',
+      dinheiro: 'Dinheiro 💵',
+      pagar_final: 'Pagar no Final (na Mesa) 🍽️',
+    };
+    return labels[method] || method;
+  };
+
+  const getPaymentStatusText = (method: string | null | undefined) => {
+    if (!method) return { text: 'Não Pago', color: '#f87171', bg: 'rgba(239, 68, 68, 0.15)' };
+    if (method === 'pix' || method === 'credito' || method === 'google_pay') {
+      return { text: 'Pago Online', color: '#34d399', bg: 'rgba(16, 185, 129, 0.15)' };
+    }
+    if (method === 'pagar_final') {
+      return { text: 'Pagar no Final', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+    }
+    return { text: 'Pagar na Entrega', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)' };
+  };
+
   // Retorna os dados do Stepper de acordo com o status e tipo do pedido
   const getStepperConfig = (order: OrderDocument) => {
     const isDelivery = !!order.address;
@@ -927,6 +951,77 @@ export const OrderTracking = () => {
                       <p style={{ margin: '0.15rem 0 0 0', color: 'var(--primary-gold)', fontWeight: 700 }}>
                         Total: R$ {order.total.toFixed(2).replace('.', ',')}
                       </p>
+                    </div>
+                  </div>
+
+                  {/* Resumo Detalhado do Pedido */}
+                  <div style={{
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    borderRadius: '12px',
+                    padding: '0.85rem 1rem',
+                    margin: '1rem 0',
+                    textAlign: 'left'
+                  }}>
+                    <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', fontWeight: 600, display: 'block', marginBottom: '0.6rem' }}>
+                      📋 Resumo do Pedido
+                    </span>
+                    
+                    {/* Itens */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderBottom: '1px solid rgba(255, 255, 255, 0.04)', paddingBottom: '0.6rem' }}>
+                      {order.items.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                          <span>
+                            <strong style={{ color: 'var(--primary-gold)', marginRight: '0.4rem' }}>{item.quantity}x</strong>
+                            <span style={{ color: '#e5e7eb' }}>{item.name}</span>
+                          </span>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Taxas e Totais */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', borderBottom: '1px solid rgba(255, 255, 255, 0.04)', padding: '0.6rem 0', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      {(order.deliveryFee ?? 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Taxa de Entrega:</span>
+                          <span>R$ {order.deliveryFee?.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )}
+                      {(order.serviceFee ?? 0) > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Taxa de Serviço (10%):</span>
+                          <span>R$ {order.serviceFee?.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#fff', fontWeight: 700, marginTop: '0.2rem' }}>
+                        <span>Total:</span>
+                        <span style={{ color: 'var(--primary-gold)' }}>R$ {order.total.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    </div>
+
+                    {/* Pagamento */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.6rem', fontSize: '0.82rem' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        Forma de Pagamento: <strong style={{ color: '#fff', marginLeft: '0.25rem' }}>{getPaymentLabel(order.paymentMethod)}</strong>
+                      </span>
+                      {(() => {
+                        const payStatus = getPaymentStatusText(order.paymentMethod);
+                        return (
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            backgroundColor: payStatus.bg,
+                            color: payStatus.color
+                          }}>
+                            {payStatus.text}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
