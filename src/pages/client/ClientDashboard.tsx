@@ -309,17 +309,12 @@ export const ClientDashboard = ({
           );
           await Promise.all(batchPromises);
 
-          if (tableNumber) {
-            const usersRef = collection(db, 'users');
-            const q = query(usersRef, where('tableNumber', '==', tableNumber));
-            const querySnapshot = await getDocs(q);
-            const userPromises = querySnapshot.docs.map(userDoc => 
-              updateDoc(doc(db, 'users', userDoc.id), {
-                tableNumber: null,
-                updatedAt: new Date().toISOString()
-              })
-            );
-            await Promise.all(userPromises);
+          if (user) {
+            const userDocRef = doc(db, 'users', user.uid);
+            await updateDoc(userDocRef, {
+              tableNumber: null,
+              updatedAt: new Date().toISOString()
+            });
           }
 
           alert("Conta fechada e paga com sucesso!");
@@ -348,16 +343,17 @@ export const ClientDashboard = ({
     setShowCloseBillModal(true);
 
     try {
+      if (!user) return;
       const q = query(
         collection(db, 'orders'),
-        where('tableNumber', '==', tableNumber),
+        where('clientUid', '==', user.uid),
         where('orderType', '==', 'dine_in_table')
       );
       const querySnapshot = await getDocs(q);
       const fetchedOrders: any[] = [];
       querySnapshot.forEach((docSnap) => {
         const d = docSnap.data();
-        if (d.status !== 'completed' && d.status !== 'cancelled') {
+        if (d.status !== 'completed' && d.status !== 'cancelled' && d.tableNumber === tableNumber) {
           fetchedOrders.push({ id: docSnap.id, ...d });
         }
       });
@@ -504,17 +500,12 @@ export const ClientDashboard = ({
       );
       await Promise.all(batchPromises);
 
-      if (tableNumber) {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('tableNumber', '==', tableNumber));
-        const querySnapshot = await getDocs(q);
-        const userPromises = querySnapshot.docs.map(userDoc => 
-          updateDoc(doc(db, 'users', userDoc.id), {
-            tableNumber: null,
-            updatedAt: new Date().toISOString()
-          })
-        );
-        await Promise.all(userPromises);
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          tableNumber: null,
+          updatedAt: new Date().toISOString()
+        });
       }
 
       alert("Conta fechada e paga com sucesso via cartão de crédito!");
