@@ -683,7 +683,7 @@ export const ClientDashboard = ({
       const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
 
       const paymentsClient = new (window as any).google.payments.api.PaymentsClient({
-        environment: 'TEST'
+        environment: import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION'
       });
 
       const paymentDataRequest = {
@@ -698,8 +698,8 @@ export const ClientDashboard = ({
           tokenizationSpecification: {
             type: 'PAYMENT_GATEWAY',
             parameters: {
-              gateway: 'example',
-              gatewayMerchantId: 'exampleGatewayMerchantId'
+              gateway: import.meta.env.VITE_GOOGLE_PAY_GATEWAY || 'pagseguro',
+              gatewayMerchantId: import.meta.env.VITE_PAGSEG_MERCHANT_ID || 'exemplo_id_pagseguro'
             }
           }
         }],
@@ -710,6 +710,7 @@ export const ClientDashboard = ({
           countryCode: 'BR'
         },
         merchantInfo: {
+          merchantId: import.meta.env.VITE_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN5TW6HJ3ZQL',
           merchantName: 'Dona Lu Pastelaria'
         }
       };
@@ -1436,7 +1437,7 @@ export const ClientDashboard = ({
         }
 
         const paymentsClient = new (window as any).google.payments.api.PaymentsClient({
-          environment: 'TEST'
+          environment: import.meta.env.VITE_GOOGLE_PAY_ENVIRONMENT || 'PRODUCTION'
         });
 
         const paymentDataRequest = {
@@ -1451,8 +1452,8 @@ export const ClientDashboard = ({
             tokenizationSpecification: {
               type: 'PAYMENT_GATEWAY',
               parameters: {
-                gateway: 'example',
-                gatewayMerchantId: 'exampleGatewayMerchantId'
+                gateway: import.meta.env.VITE_GOOGLE_PAY_GATEWAY || 'pagseguro',
+                gatewayMerchantId: import.meta.env.VITE_PAGSEG_MERCHANT_ID || 'exemplo_id_pagseguro'
               }
             }
           }],
@@ -1463,6 +1464,7 @@ export const ClientDashboard = ({
             countryCode: 'BR'
           },
           merchantInfo: {
+            merchantId: import.meta.env.VITE_GOOGLE_PAY_MERCHANT_ID || 'BCR2DN5TW6HJ3ZQL',
             merchantName: 'Dona Lu Pastelaria'
           }
         };
