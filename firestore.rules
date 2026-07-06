@@ -45,9 +45,10 @@ service cloud.firestore {
         isAdmin()
       );
       
-      // Atualizar documento: o próprio usuário (não pode mudar seu papel) ou se for admin
+      // Atualizar documento: o próprio usuário (não pode mudar seu papel), ou staff (sem alterar papel), ou se for admin
       allow update: if request.auth != null && (
         (request.auth.uid == userId && request.resource.data.role == resource.data.role) || 
+        (isStaff() && request.resource.data.role == resource.data.role) ||
         isAdmin()
       );
       
@@ -104,6 +105,12 @@ service cloud.firestore {
       allow read: if isStaff();
       allow create: if isStaff();
       allow update, delete: if isAdmin();
+    }
+
+    // Regras para a coleção de reservas (reservations)
+    match /reservations/{reservationId} {
+      allow read: if true;
+      allow write: if isStaff();
     }
   }
 }

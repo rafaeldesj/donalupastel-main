@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ChefHat, CreditCard, Bell, Play, Check, Navigation } from 'lucide-react';
-import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc, getDocs, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { OrderDocument } from '../../types/order';
 
@@ -37,7 +37,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     try {
       const orderDocRef = doc(db, 'orders', order.id);
       await updateDoc(orderDocRef, {
-        status: 'preparing'
+        status: 'pending'
       });
 
       await addDoc(collection(db, 'transactions'), {
@@ -92,6 +92,25 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     }
   };
 
+  const handleRestoreServiceFee = async (order: OrderDocument) => {
+    if (!order.id) return;
+    if (order.serviceFee && order.serviceFee > 0) return;
+    
+    if (window.confirm("Deseja realmente cobrar a taxa de serviço de 10% novamente para este pedido?")) {
+      try {
+        const calculatedFee = order.total * 0.10;
+        const orderRef = doc(db, 'orders', order.id);
+        await updateDoc(orderRef, {
+          total: order.total + calculatedFee,
+          serviceFee: calculatedFee
+        });
+      } catch (err) {
+        console.error("Erro ao cobrar taxa de serviço novamente:", err);
+        alert("Erro ao aplicar taxa novamente. Verifique suas permissões.");
+      }
+    }
+  };
+
   // Escuta pedidos em tempo real no Firestore
   useEffect(() => {
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'asc'));
@@ -114,10 +133,45 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     return () => unsubscribe();
   }, []);
 
+  const checkAndFreeTable = async (orderTableNumber?: string | null, orderIdToExclude?: string) => {
+    if (!orderTableNumber) return;
+    // Verifica se existem outros pedidos ativos para a mesma mesa
+    const otherActive = orders.some(o => 
+      o.id !== orderIdToExclude && 
+      o.orderType === 'dine_in_table' && 
+      o.tableNumber === orderTableNumber && 
+      !['completed', 'cancelled'].includes(o.status)
+    );
+    
+    if (!otherActive) {
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('tableNumber', '==', orderTableNumber));
+        const querySnapshot = await getDocs(q);
+        const batchPromises = querySnapshot.docs.map(userDoc => 
+          updateDoc(doc(db, 'users', userDoc.id), {
+            tableNumber: null,
+            updatedAt: new Date().toISOString()
+          })
+        );
+        await Promise.all(batchPromises);
+      } catch (err) {
+        console.error("Erro ao desvincular mesa após encerramento:", err);
+      }
+    }
+  };
+
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
       const orderDocRef = doc(db, 'orders', orderId);
       await updateDoc(orderDocRef, { status: newStatus });
+
+      if (newStatus === 'completed' || newStatus === 'cancelled') {
+        const order = orders.find(o => o.id === orderId);
+        if (order) {
+          await checkAndFreeTable(order.tableNumber, orderId);
+        }
+      }
     } catch (error) {
       console.error("Erro ao atualizar status do pedido:", error);
     }
@@ -133,6 +187,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     }
 
     try {
+      const order = orders.find(o => o.id === cancelOrderId);
       const orderDocRef = doc(db, 'orders', cancelOrderId);
       await updateDoc(orderDocRef, {
         status: 'cancelled',
@@ -140,6 +195,11 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
         cancelledAt: new Date().toISOString(),
         cancelledBy: userData?.name || userData?.email || 'Admin',
       });
+
+      if (order) {
+        await checkAndFreeTable(order.tableNumber, cancelOrderId);
+      }
+
       setCancelOrderId(null);
       setCancelOrderSeq(null);
       setCancelReasonOption('Cliente desistiu do pedido');
@@ -248,7 +308,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       </div>
                       <div style={{ margin: '1rem 0' }}>
                         {order.items.map((item, index) => (
-                          <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong></p>
+                          <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong> - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
                         ))}
                         {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
@@ -315,7 +375,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       </div>
                       <div style={{ margin: '1rem 0' }}>
                         {order.items.map((item, index) => (
-                          <p key={index} className="order-desc">{item.quantity}x {item.name}</p>
+                          <p key={index} className="order-desc">{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
                         ))}
                         {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
@@ -380,7 +440,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                             <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
                             {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
                             <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
-                            <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : '💴 Cartão (maquininha)'}</strong></div>
+                             <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : '💴 Cartão (maquininha)'}</strong></div>
                             {order.paymentMethod === 'dinheiro' && order.changeFor && (
                               <div style={{ color: '#ef4444' }}>Troco para: <strong>R$ {order.changeFor.toFixed(2).replace('.', ',')}</strong> (Troco: R$ {(order.changeFor - order.total).toFixed(2).replace('.', ',')})</div>
                             )}
@@ -388,7 +448,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                         </div>
                         <div style={{ margin: '0.75rem 0', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.5rem' }}>
                           {order.items.map((item, index) => (
-                            <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name}</p>
+                            <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
                           ))}
                           {(order.deliveryFee ?? 0) > 0 && (
                             <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
@@ -400,8 +460,18 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                               🪑 Taxa de Serviço (10%): R$ {(order.serviceFee ?? 0).toFixed(2).replace('.', ',')}
                             </p>
                           )}
+                          {order.orderType === 'dine_in_table' && (order.serviceFee ?? 0) === 0 && (
+                            <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: '#ef4444', fontStyle: 'italic' }}>
+                              🪑 Taxa de Serviço (10%): Isento/Não cobrado
+                            </p>
+                          )}
                         </div>
-                        <div className="order-actions" style={{ display: 'grid', gridTemplateColumns: (order.serviceFee ?? 0) > 0 ? '1fr 1fr 1fr' : '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+                        <div className="order-actions" style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: order.orderType === 'dine_in_table' ? '1fr 1fr 1fr' : '1fr 1fr', 
+                          gap: '0.5rem', 
+                          marginTop: '0.75rem' 
+                        }}>
                           <button 
                             type="button" 
                             onClick={() => handleApproveCashierOrder(order)} 
@@ -410,28 +480,52 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                           >
                             ✓ Aprovar
                           </button>
-                          {(order.serviceFee ?? 0) > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => handleWaiveServiceFee(order)}
-                              className="btn-small"
-                              style={{ 
-                                width: '100%', 
-                                padding: '0.6rem', 
-                                background: 'rgba(245, 158, 11, 0.1)', 
-                                color: 'var(--primary-gold)', 
-                                border: '1px dashed var(--primary-gold)', 
-                                borderRadius: '8px', 
-                                cursor: 'pointer', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                gap: '0.3rem', 
-                                fontWeight: 700 
-                              }}
-                            >
-                              Isentar 10%
-                            </button>
+                          {order.orderType === 'dine_in_table' && (
+                            (order.serviceFee ?? 0) > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleWaiveServiceFee(order)}
+                                className="btn-small"
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '0.6rem', 
+                                  background: 'rgba(245, 158, 11, 0.1)', 
+                                  color: 'var(--primary-gold)', 
+                                  border: '1px dashed var(--primary-gold)', 
+                                  borderRadius: '8px', 
+                                  cursor: 'pointer', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center', 
+                                  gap: '0.3rem', 
+                                  fontWeight: 700 
+                                }}
+                              >
+                                Isentar 10%
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreServiceFee(order)}
+                                className="btn-small"
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '0.6rem', 
+                                  background: 'rgba(16, 185, 129, 0.1)', 
+                                  color: '#10b981', 
+                                  border: '1px dashed #10b981', 
+                                  borderRadius: '8px', 
+                                  cursor: 'pointer', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center', 
+                                  gap: '0.3rem', 
+                                  fontWeight: 700 
+                                }}
+                              >
+                                Cobrar 10%
+                              </button>
+                            )
                           )}
                           <button 
                             type="button" 
@@ -526,7 +620,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       </div>
                       <div style={{ margin: '1rem 0' }}>
                         {order.items.map((item, index) => (
-                          <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong></p>
+                          <p key={index} className="order-desc" style={{ fontSize: '1.05rem' }}>{item.quantity}x <strong>{item.name}</strong> - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
                         ))}
                         {(order.deliveryFee ?? 0) > 0 && (
                           <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>

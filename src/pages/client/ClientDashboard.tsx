@@ -223,7 +223,7 @@ export const ClientDashboard = ({
   const [routeDistance, setRouteDistance] = useState<number | null>(null);
   const [orderType, setOrderType] = useState<'pickup' | 'delivery' | 'dine_in' | 'dine_in_table'>('pickup');
   const [tableNumber, setTableNumber] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro' | 'pagar_final'>('pix');
   const [changeFor, setChangeFor] = useState('');
   const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   const [showOrderSummary, setShowOrderSummary] = useState(false);
@@ -262,36 +262,73 @@ export const ClientDashboard = ({
     fetchStoreConfig();
   }, []);
 
+  const checkReservationAndSetTable = async (tableId: string) => {
+    try {
+      const resSnap = await getDoc(doc(db, 'reservations', tableId));
+      if (resSnap.exists()) {
+        const resData = resSnap.data();
+        if (resData.reserved) {
+          // Se a reserva for para o cliente atual logado, permite o vínculo
+          if (user && resData.clientUid === user.uid) {
+            setTableNumber(tableId);
+            sessionStorage.setItem('donalu_mesa', tableId);
+            setOrderType('dine_in_table');
+            
+            const userDocRef = doc(db, 'users', user.uid);
+            await updateDoc(userDocRef, {
+              tableNumber: tableId,
+              updatedAt: new Date().toISOString()
+            });
+            return true;
+          } else {
+            // Caso contrário, bloqueia e limpa a mesa local e no banco
+            alert(`Esta mesa está reservada ${resData.clientName ? `para ${resData.clientName}` : ''} e não pode ser ocupada.`);
+            setTableNumber(null);
+            sessionStorage.removeItem('donalu_mesa');
+            setOrderType('pickup');
+            
+            if (user) {
+              const userDocRef = doc(db, 'users', user.uid);
+              await updateDoc(userDocRef, {
+                tableNumber: null,
+                updatedAt: new Date().toISOString()
+              });
+            }
+            return false;
+          }
+        }
+      }
+
+      // Se não houver reserva, vincula normalmente
+      setTableNumber(tableId);
+      sessionStorage.setItem('donalu_mesa', tableId);
+      setOrderType('dine_in_table');
+
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          tableNumber: tableId,
+          updatedAt: new Date().toISOString()
+        });
+      }
+      return true;
+    } catch (err) {
+      console.error("Erro ao verificar reserva da mesa:", err);
+      return false;
+    }
+  };
+
   // 1. Sincroniza a mesa identificada localmente com a conta do usuário
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const mesa = params.get('mesa') || params.get('table');
 
-    const saveTableToDb = async (m: string) => {
-      if (user) {
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          await updateDoc(userDocRef, {
-            tableNumber: m,
-            updatedAt: new Date().toISOString()
-          });
-        } catch (err) {
-          console.error("Erro ao salvar mesa no banco:", err);
-        }
-      }
-    };
-
     if (mesa) {
-      setTableNumber(mesa);
-      setOrderType('dine_in_table');
-      sessionStorage.setItem('donalu_mesa', mesa);
-      saveTableToDb(mesa);
+      checkReservationAndSetTable(mesa);
     } else {
       const savedMesa = sessionStorage.getItem('donalu_mesa');
       if (savedMesa) {
-        setTableNumber(savedMesa);
-        setOrderType('dine_in_table');
-        saveTableToDb(savedMesa);
+        checkReservationAndSetTable(savedMesa);
       }
     }
   }, [user]);
@@ -611,22 +648,10 @@ export const ClientDashboard = ({
     const cleaned = input.trim();
     const num = parseInt(cleaned);
     if (!isNaN(num) && num >= 1 && num <= 99) {
-      setTableNumber(cleaned);
-      sessionStorage.setItem('donalu_mesa', cleaned);
-      setOrderType('dine_in_table');
-
-      if (user) {
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          await updateDoc(userDocRef, {
-            tableNumber: cleaned,
-            updatedAt: new Date().toISOString()
-          });
-        } catch (err) {
-          console.error("Erro ao atualizar mesa no banco:", err);
-        }
+      const allowed = await checkReservationAndSetTable(cleaned);
+      if (allowed) {
+        window.alert("Ok, sua mesa foi atualizada com sucesso!");
       }
-      window.alert("Ok, sua mesa foi atualizada com sucesso!");
     } else {
       window.alert("Por favor, digite um número de mesa válido (1 a 99).");
     }
@@ -710,6 +735,7 @@ export const ClientDashboard = ({
     credito: 'Cartão de Crédito',
     debito: 'Cartão de Débito',
     dinheiro: 'Dinheiro',
+    pagar_final: 'Pagar no Final (na Mesa) 🍽️',
   };
 
   const handleOpenSummary = () => {
@@ -779,7 +805,7 @@ export const ClientDashboard = ({
       total: finalTotal,
       deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
       serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
-      status: 'preparing',
+      status: 'pending',
       createdAt: new Date().toISOString(),
       orderType,
       tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
@@ -857,12 +883,30 @@ export const ClientDashboard = ({
       }
       businessStart.setHours(6, 0, 0, 0);
 
-      const qDaily = query(
-        collection(db, 'orders'),
-        where('createdAt', '>=', businessStart.toISOString())
-      );
-      const dailySnap = await getDocs(qDaily);
-      const dailySeq = dailySnap.size + 1;
+      let dailySeq = 1;
+      try {
+        if (userData?.role && userData.role !== 'client') {
+          // Admins, staff e gerentes podem listar todos os pedidos do dia
+          const qDaily = query(
+            collection(db, 'orders'),
+            where('createdAt', '>=', businessStart.toISOString())
+          );
+          const dailySnap = await getDocs(qDaily);
+          dailySeq = dailySnap.size + 1;
+        } else {
+          // Clientes normais contam apenas os próprios pedidos de hoje como fallback de sequência
+          const qUserDaily = query(
+            collection(db, 'orders'),
+            where('clientUid', '==', user?.uid),
+            where('createdAt', '>=', businessStart.toISOString())
+          );
+          const userDailySnap = await getDocs(qUserDaily);
+          dailySeq = userDailySnap.size + 1;
+        }
+      } catch (errSeq) {
+        console.warn("Erro ao calcular sequência de hoje (fallback ativo):", errSeq);
+        dailySeq = Math.floor(Math.random() * 900) + 100;
+      }
 
       let finalStatus = 'pending';
 
@@ -895,8 +939,12 @@ export const ClientDashboard = ({
         setShowPixLightbox(true);
         setSubmitting(false);
         return;
-      } else if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
-        finalStatus = 'aguardando_caixa';
+      } else if (paymentMethod === 'dinheiro' || paymentMethod === 'debito' || paymentMethod === 'pagar_final') {
+        if (orderType === 'dine_in_table') {
+          finalStatus = 'pending';
+        } else {
+          finalStatus = 'aguardando_caixa';
+        }
       } else if (paymentMethod === 'credito') {
         // FLUXO DE PAGAMENTO ONLINE DO PAGBANK
         const isUsingSavedCard = useSavedCard && !!userData?.pagbank_card_token;
@@ -971,7 +1019,7 @@ export const ClientDashboard = ({
           });
         }
 
-        finalStatus = 'preparing';
+        finalStatus = 'pending';
       }
 
       const orderData: any = {
@@ -1814,7 +1862,10 @@ export const ClientDashboard = ({
                 Forma de Pagamento
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                {([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const).map(([val, label]) => (
+                {(orderType === 'dine_in_table'
+                  ? ([['pix','Pix 🟡'],['credito','Crédito 💳'],['pagar_final','Pagar no Final 🍽️']] as const)
+                  : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const)
+                ).map(([val, label]) => (
                   <button
                     key={val}
                     type="button"

@@ -3,7 +3,7 @@ import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
 import { DeliveryMap } from './components/DeliveryMap';
-import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown } from 'lucide-react';
+import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown, Grid } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 import logoDonaluMobile from './assets/logo_donalu_mobile.png';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -18,6 +18,7 @@ const DeliveryActive = lazy(() => import('./pages/delivery/DeliveryActive'));
 const DeliveryHistory = lazy(() => import('./pages/delivery/DeliveryHistory'));
 const OrderTracking = lazy(() => import('./pages/client/OrderTracking'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const TableMap = lazy(() => import('./pages/staff/TableMap'));
 
 // Premium feedback state for lazy loading
 const ViewLoader = () => (
@@ -243,6 +244,11 @@ const MainLayout = () => {
       menuItems.push({ id: 'admin', label: 'Painel Admin', icon: FileText });
     }
 
+    // Mapa de Mesas (admin, owner, dev)
+    if (['developer', 'owner', 'manager'].includes(role)) {
+      menuItems.push({ id: 'mapa_mesas', label: 'Mapa de Mesas', icon: Grid });
+    }
+
     // Painel de Gestão de Usuários (admin, owner, dev)
     if (['developer', 'owner', 'manager'].includes(role)) {
       menuItems.push({ id: 'users', label: 'Usuários', icon: Users });
@@ -260,11 +266,11 @@ const MainLayout = () => {
   }
 
   const menuGroups = [
-  { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade'] },
-  { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada'] },
-  { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'admin', 'teste_mapa'] },
-  { label: 'Configurações', ids: ['users', 'configuracoes'] },
-];
+    { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade'] },
+    { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada'] },
+    { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'mapa_mesas', 'admin', 'teste_mapa'] },
+    { label: 'Configurações', ids: ['users', 'configuracoes'] },
+  ];
 const getRoleLabel = (r: string): React.ReactNode => {
     switch (r) {
       case 'developer': return (
@@ -403,6 +409,7 @@ const getRoleLabel = (r: string): React.ReactNode => {
             {activeView === 'admin' && <AdminDashboard />}
             {activeView === 'users' && <UserManagement />}
             {activeView === 'configuracoes' && <SettingsPage />}
+            {activeView === 'mapa_mesas' && <TableMap />}
             {activeView === 'teste_mapa' && (
               <div style={{ maxWidth: '680px', margin: '0 auto' }}>
                 <div style={{ marginBottom: '1.5rem' }}>

@@ -190,7 +190,7 @@ interface PaymentRetryProps {
 }
 
 const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro' | 'pagar_final'>('pix');
   const [changeFor, setChangeFor] = useState('');
   const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   
@@ -224,8 +224,12 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
     try {
       let finalStatus = 'pending';
       
-      if (paymentMethod === 'dinheiro' || paymentMethod === 'debito') {
-        finalStatus = 'aguardando_caixa';
+      if (paymentMethod === 'dinheiro' || paymentMethod === 'debito' || paymentMethod === 'pagar_final') {
+        if (order.orderType === 'dine_in_table') {
+          finalStatus = 'preparing';
+        } else {
+          finalStatus = 'aguardando_caixa';
+        }
       } else if (paymentMethod === 'credito') {
         const isUsingSavedCard = useSavedCard && !!userData?.pagbank_card_token;
         let encryptedCardToken = '';
@@ -299,7 +303,7 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
           });
         }
 
-        finalStatus = 'preparing';
+        finalStatus = 'pending';
       }
 
       const orderDocRef = doc(db, 'orders', order.id!);
@@ -331,15 +335,18 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
 
       <form onSubmit={handleRetryPayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-          {([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const).map(([val, label]) => (
+          {(order.orderType === 'dine_in_table'
+            ? ([['pix','Pix 🟡'],['credito','Crédito 💳'],['pagar_final','Pagar no Final 🍽️']] as const)
+            : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const)
+          ).map(([val, label]) => (
             <button
               key={val}
               type="button"
               onClick={() => {
-              setPaymentMethod(val);
-              setChangeFor('');
-              setNoChangeNeeded(false);
-            }}
+                setPaymentMethod(val);
+                setChangeFor('');
+                setNoChangeNeeded(false);
+              }}
               style={{
                 padding: '0.6rem 0.5rem',
                 borderRadius: '10px',
