@@ -16,6 +16,7 @@ const AdminDashboard = lazy(() => import('./pages/manager/AdminDashboard'));
 const UserManagement = lazy(() => import('./pages/manager/UserManagement'));
 const DeliveryActive = lazy(() => import('./pages/delivery/DeliveryActive'));
 const DeliveryHistory = lazy(() => import('./pages/delivery/DeliveryHistory'));
+const ManagerDeliveryActive = lazy(() => import('./pages/manager/ManagerDeliveryActive'));
 const OrderTracking = lazy(() => import('./pages/client/OrderTracking'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const TableMap = lazy(() => import('./pages/staff/TableMap'));
@@ -404,7 +405,13 @@ const getRoleLabel = (r: string): React.ReactNode => {
             {activeView === 'cozinha' && <StaffDashboard filter="cook" />}
             {activeView === 'atendimento' && <StaffDashboard filter="attendant" />}
             {activeView === 'caixa' && <StaffDashboard filter="cashier" />}
-            {activeView === 'entrega_andamento' && <DeliveryActive />}
+            {activeView === 'entrega_andamento' && (
+              ['developer', 'owner', 'manager'].includes(role) ? (
+                <ManagerDeliveryActive />
+              ) : (
+                <DeliveryActive />
+              )
+            )}
             {activeView === 'entrega_finalizada' && <DeliveryHistory />}
             {activeView === 'admin' && <AdminDashboard />}
             {activeView === 'users' && <UserManagement />}
