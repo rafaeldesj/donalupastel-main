@@ -193,10 +193,10 @@ export const ClientDashboard = ({
   const { user, userData, updatePhoneNumber } = useAuth();
 
   const defaultPastels = [
-    { id: 1, name: 'Pastel de Carne com Queijo', price: 12.00, description: 'Carne moída temperada com queijo mussarela derretido.', image: pastelCrocante },
-    { id: 2, name: 'Pastel de Frango Catupiry', price: 11.50, description: 'Peito de frango desfiado com o autêntico Catupiry.', image: pastelFrito },
-    { id: 3, name: 'Pastel de Vento Especial', price: 6.00, description: 'Aquele clássico dourado e crocante de feira.', image: pastelRefri },
-    { id: 4, name: 'Pastel Doce de Nutella com Morango', price: 14.00, description: 'Sobremesa perfeita recheada com Nutella e morangos frescos.', image: pastelCombo },
+    { id: 1, name: 'Pastel de Carne com Queijo', price: 12.00, description: 'Carne moída temperada com queijo mussarela derretido.', image: pastelCrocante, category: 'Pastéis Salgados' },
+    { id: 2, name: 'Pastel de Frango Catupiry', price: 11.50, description: 'Peito de frango desfiado com o autêntico Catupiry.', image: pastelFrito, category: 'Pastéis Salgados' },
+    { id: 3, name: 'Pastel de Vento Especial', price: 6.00, description: 'Aquele clássico dourado e crocante de feira.', image: pastelRefri, category: 'Pastéis Salgados' },
+    { id: 4, name: 'Pastel Doce de Nutella com Morango', price: 14.00, description: 'Sobremesa perfeita recheada com Nutella e morangos frescos.', image: pastelCombo, category: 'Pastéis Doces' },
   ];
 
   // Estados
