@@ -62,8 +62,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      const savedSession = localStorage.getItem('donalu_session');
+      let isTempSession = false;
+      if (savedSession) {
+        try {
+          const { uid } = JSON.parse(savedSession);
+          isTempSession = uid && uid.length === 20;
+        } catch (e) {}
+      }
+
       const sessionLoaded = await loadSession();
-      if (sessionLoaded) return;
+      if (sessionLoaded && !isTempSession) return;
 
       setUser(currentUser);
       
@@ -116,6 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     await deleteDoc(doc(db, 'users', preRegDoc.id));
                   }
                   
+                  localStorage.setItem('donalu_session', JSON.stringify({ uid: currentUser.uid }));
                   setUserData(finalUserData);
                   foundPreRegistration = true;
                 }
