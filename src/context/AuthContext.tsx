@@ -204,15 +204,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         }
       } else {
-        // Busca flexível pelo Nome (Case-Insensitive)
-        const snap = await getDocs(usersRef);
-        const match = snap.docs.find(d => {
-          const u = d.data();
-          return u.name && u.name.toLowerCase().trim() === trimmedLower;
-        });
-        if (match) {
-          userDocData = match.data();
-          userDocId = match.id;
+        // Busca compatível com as regras rígidas do list (filtro de igualdade direta '==')
+        // Tenta buscar pelo nome exato (como Rafael Jorge)
+        const qName = query(usersRef, where('name', '==', trimmed), limit(1));
+        const snapName = await getDocs(qName);
+        if (!snapName.empty) {
+          userDocData = snapName.docs[0].data();
+          userDocId = snapName.docs[0].id;
+        } else {
+          // Tenta buscar com o nome todo em minúsculas
+          const qNameLower = query(usersRef, where('name', '==', trimmedLower), limit(1));
+          const snapNameLower = await getDocs(qNameLower);
+          if (!snapNameLower.empty) {
+            userDocData = snapNameLower.docs[0].data();
+            userDocId = snapNameLower.docs[0].id;
+          }
         }
       }
     } catch (dbErr) {
