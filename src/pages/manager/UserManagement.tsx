@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { collection, query, onSnapshot, doc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth as getSecondaryAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import type { UserDocument, UserRole, StaffFunctions } from '../../types/user';
 import { Plus, Edit2, Trash2, X, Search, KeyRound, Eye, EyeOff } from 'lucide-react';
@@ -9,6 +11,28 @@ import { logAuditAction } from '../../utils/audit';
 
 export const UserManagement = () => {
   const { user, userData } = useAuth();
+
+  const createSecondaryAuthUser = async (emailVal: string, passwordVal: string) => {
+    const firebaseConfig = {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAzR9UQyV0xIwYgU9xoTuiEfqwhIiDvIrU",
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "dona-lu-4242d.firebaseapp.com",
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "dona-lu-4242d",
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "dona-lu-4242d.firebasestorage.app",
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "87878437306",
+      appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:87878437306:web:6bb76b8dadd3e7dbd43583",
+    };
+
+    const appName = `SecondaryApp_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    try {
+      const secondaryApp = initializeApp(firebaseConfig, appName);
+      const secondaryAuth = getSecondaryAuth(secondaryApp);
+      await createUserWithEmailAndPassword(secondaryAuth, emailVal, passwordVal);
+      await deleteApp(secondaryApp);
+      console.log("Secondary user account created in Firebase Auth successfully!");
+    } catch (err) {
+      console.warn("Secondary user account check or error:", err);
+    }
+  };
   const [users, setUsers] = useState<UserDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -136,6 +160,11 @@ export const UserManagement = () => {
     setSuccess(null);
 
     try {
+      if (resetUser.uid.length === 20) {
+        // Garante que a conta de login do Firebase Auth exista com essa nova senha provisória
+        await createSecondaryAuthUser(resetUser.email, tempPassword.trim());
+      }
+
       await updateDoc(doc(db, 'users', resetUser.uid), {
         tempPassword: tempPassword.trim()
       });
@@ -208,14 +237,17 @@ export const UserManagement = () => {
           // de forma que o cliente precise se cadastrar/logar com o novo e-mail para ter acesso.
           await deleteDoc(doc(db, 'users', editUser.uid));
 
+          const targetTempPassword = editUser.tempPassword || 'donalu123';
+          await createSecondaryAuthUser(email.trim().toLowerCase(), targetTempPassword);
+
           const docRef = await addDoc(collection(db, 'users'), {
             ...payload,
-            tempPassword: editUser.tempPassword || '',
+            tempPassword: targetTempPassword,
             uid: '' // Reseta o UID para aguardar o primeiro login com o novo e-mail
           });
           await updateDoc(doc(db, 'users', docRef.id), { uid: docRef.id });
 
-          setSuccess('E-mail alterado! O usuário precisará logar com o novo e-mail para reativar seu cadastro.');
+          setSuccess('E-mail alterado! A conta de acesso temporária foi ativada com o novo e-mail e senha provisória.');
         } else {
           // Se o e-mail continuou o mesmo, apenas atualiza em tempo real
           await updateDoc(doc(db, 'users', editUser.uid), payload as any);
@@ -235,6 +267,9 @@ export const UserManagement = () => {
           });
         }
       } else {
+        // Cria a conta de login no Auth secundário para que funcione de primeira
+        await createSecondaryAuthUser(email.trim().toLowerCase(), initialPassword.trim());
+
         // Pré-cadastro do usuário (gerará um ID temporário aleatório no Firestore)
         const docRef = await addDoc(collection(db, 'users'), {
           ...payload,
