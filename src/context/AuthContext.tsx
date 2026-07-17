@@ -15,7 +15,7 @@ interface AuthContextType {
   registerWithEmail: (email: string, password: string, name: string, phoneNumber?: string) => Promise<void>;
   logout: () => Promise<void>;
   updatePhoneNumber: (phone: string) => Promise<void>;
-  completeRegistration: (name: string, phone: string) => Promise<void>;
+  completeRegistration: (name: string, phone: string, email?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -150,21 +150,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUserData(prev => prev ? { ...prev, phoneNumber: phone } : null);
   };
 
-  const completeRegistration = async (name: string, phone: string) => {
+  const completeRegistration = async (name: string, phone: string, emailVal?: string) => {
     if (!user) return;
+
+    let finalEmail = user.email || '';
+    if (emailVal && emailVal.trim().toLowerCase() !== finalEmail.toLowerCase()) {
+      try {
+        const { updateEmail } = await import('firebase/auth');
+        await updateEmail(user, emailVal.trim().toLowerCase());
+        finalEmail = emailVal.trim().toLowerCase();
+      } catch (authErr) {
+        console.error("Erro ao atualizar email no Firebase Auth:", authErr);
+        // Prossegue com o Firestore mesmo se falhar no Auth (ex: exige reautenticação recente)
+        finalEmail = emailVal.trim().toLowerCase();
+      }
+    }
+
     const userDocRef = doc(db, 'users', user.uid);
     const userDocSnap = await getDoc(userDocRef);
     const existingData = userDocSnap.exists() ? userDocSnap.data() as UserDocument : null;
     
     const finalUserData: UserDocument = {
-      uid: user.uid,
-      email: user.email || '',
-      name: name,
       role: existingData?.role || 'client',
-      phoneNumber: phone,
       createdAt: existingData?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      ...(existingData || {})
+      ...(existingData || {}),
+      uid: user.uid,
+      email: finalEmail,
+      name: name,
+      phoneNumber: phone,
+      updatedAt: new Date().toISOString()
     };
     
     await setDoc(userDocRef, finalUserData);

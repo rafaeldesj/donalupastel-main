@@ -201,8 +201,9 @@ export const AuthButton = () => {
   };
 
   React.useEffect(() => {
-    if (user && !name) {
-      setName(user.displayName || '');
+    if (user) {
+      if (!name) setName(user.displayName || '');
+      if (!email) setEmail(user.email || '');
     }
   }, [user]);
 
@@ -220,7 +221,7 @@ export const AuthButton = () => {
 
     setActionLoading(true);
     try {
-      await completeRegistration(finalName, phone);
+      await completeRegistration(finalName, phone, email);
     } catch (err: any) {
       console.error(err);
       setError('Ocorreu um erro ao concluir o cadastro. Tente novamente.');
@@ -276,9 +277,10 @@ export const AuthButton = () => {
               <input 
                 id="complete-email"
                 type="email" 
-                value={user.email || ''} 
-                disabled
-                style={{ opacity: 0.6, cursor: 'not-allowed' }}
+                placeholder="email@exemplo.com"
+                value={email || ''} 
+                onChange={(e) => setEmail(e.target.value)}
+                required
               />
             </div>
           </div>
