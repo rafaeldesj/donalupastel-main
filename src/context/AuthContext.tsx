@@ -168,37 +168,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const usersRef = collection(db, 'users');
 
-    if (trimmed.includes('@')) {
-      const q = query(usersRef, where('email', '==', trimmed.toLowerCase()), limit(1));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        userDocData = snap.docs[0].data();
-        userDocId = snap.docs[0].id;
-      }
-    } else {
-      const clean = trimmed.replace(/\D/g, '');
-      const qClean = query(usersRef, where('phoneNumber', '==', clean), limit(1));
-      const snapClean = await getDocs(qClean);
-      if (!snapClean.empty) {
-        userDocData = snapClean.docs[0].data();
-        userDocId = snapClean.docs[0].id;
+    try {
+      if (trimmed.includes('@')) {
+        const q = query(usersRef, where('email', '==', trimmed.toLowerCase()), limit(1));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          userDocData = snap.docs[0].data();
+          userDocId = snap.docs[0].id;
+        }
       } else {
-        const formatPhoneFilter = (numbers: string) => {
-          if (numbers.length === 11) {
-            return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
-          } else if (numbers.length === 10) {
-            return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+        const clean = trimmed.replace(/\D/g, '');
+        const qClean = query(usersRef, where('phoneNumber', '==', clean), limit(1));
+        const snapClean = await getDocs(qClean);
+        if (!snapClean.empty) {
+          userDocData = snapClean.docs[0].data();
+          userDocId = snapClean.docs[0].id;
+        } else {
+          const formatPhoneFilter = (numbers: string) => {
+            if (numbers.length === 11) {
+              return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+            } else if (numbers.length === 10) {
+              return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+            }
+            return numbers;
+          };
+          const formatted = formatPhoneFilter(clean);
+          const qFormat = query(usersRef, where('phoneNumber', '==', formatted), limit(1));
+          const snapFormat = await getDocs(qFormat);
+          if (!snapFormat.empty) {
+            userDocData = snapFormat.docs[0].data();
+            userDocId = snapFormat.docs[0].id;
           }
-          return numbers;
-        };
-        const formatted = formatPhoneFilter(clean);
-        const qFormat = query(usersRef, where('phoneNumber', '==', formatted), limit(1));
-        const snapFormat = await getDocs(qFormat);
-        if (!snapFormat.empty) {
-          userDocData = snapFormat.docs[0].data();
-          userDocId = snapFormat.docs[0].id;
         }
       }
+    } catch (dbErr) {
+      console.warn("Erro de busca no Firestore antes do login, usando fallback:", dbErr);
     }
 
     if (userDocData) {
@@ -222,7 +226,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         try {
           const credential = await signInWithEmailAndPassword(auth, userDocData.email, password);
-          await updateDoc(doc(db, 'users', userDocId), { password });
+          try {
+            await updateDoc(doc(db, 'users', userDocId), { password });
+          } catch (dbUpdateErr) {
+            console.warn("Erro ao atualizar senha no Firestore após login do Auth:", dbUpdateErr);
+          }
           const updatedData = { ...userDocData, password };
           setUser(credential.user);
           setUserData(updatedData);
@@ -236,6 +244,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (trimmed.includes('@')) {
       const credential = await signInWithEmailAndPassword(auth, trimmed.toLowerCase(), password);
+      
+      try {
+        const userDocRef = doc(db, 'users', credential.user.uid);
+        const docSnap = await getDoc(userDocRef);
+        if (docSnap.exists()) {
+          const uData = docSnap.data();
+          try {
+            await updateDoc(userDocRef, { password });
+          } catch (dbUpdateErr) {
+            console.warn("Erro ao salvar senha no Firestore:", dbUpdateErr);
+          }
+          setUserData({ ...uData, password } as any);
+        }
+      } catch (dbFetchErr) {
+        console.error("Erro ao recuperar perfil pós-login do Auth:", dbFetchErr);
+      }
+
       setUser(credential.user);
       localStorage.setItem('donalu_session', JSON.stringify({ uid: credential.user.uid }));
       return;
@@ -244,7 +269,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     throw { code: 'auth/user-not-found', message: 'Usuário não encontrado.' };
   };
 
-  const registerWithEmail = async (email: string, password: string, name: string, phoneNumber?: string) => {
+    const registerWithEmail = async (email: string, password: string, name: string, phoneNumber?: string) => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const currentUser = userCredential.user;
     
