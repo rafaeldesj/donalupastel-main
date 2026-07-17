@@ -339,7 +339,7 @@ const OrderPaymentRetry = ({ order, userData }: PaymentRetryProps) => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
           {(order.orderType === 'dine_in_table'
             ? ([['pix','Pix 🟡'],['credito','Crédito 💳'],['pagar_final','Pagar no Final 🍽️']] as const)
-            : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const)
+            : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['debito','Débito 💴']] as const)
           ).map(([val, label]) => (
             <button
               key={val}

@@ -5,6 +5,10 @@ export interface OrderItem {
   name: string;
   price: number; // Numérico para cálculos
   quantity: number;
+  category?: string;
+  withCatupiry?: boolean;
+  withBorda?: boolean;
+  ingredients?: string[];
 }
 
 export interface OrderDocument {

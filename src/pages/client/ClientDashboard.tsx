@@ -1212,12 +1212,22 @@ export const ClientDashboard = ({
       alert('A pastelaria está fechada no momento e não está recebendo pedidos.');
       return;
     }
+
     setCart((prevCart) => {
       const existing = prevCart.find((i) => i.id === item.id);
       if (existing) {
         return prevCart.map((i) => (i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
-      return [...prevCart, { id: item.id, name: item.name, price: item.price, quantity: 1 }];
+      return [...prevCart, { 
+        id: item.id, 
+        name: item.name, 
+        price: item.price, 
+        quantity: 1,
+        category: item.category || 'Pastéis Salgados',
+        withCatupiry: false,
+        withBorda: false,
+        ingredients: []
+      }];
     });
   };
 
@@ -1231,6 +1241,27 @@ export const ClientDashboard = ({
         .map((i) => (i.id === id ? { ...i, quantity: i.quantity + delta } : i))
         .filter((i) => i.quantity > 0)
     );
+  };
+
+  const toggleCartItemCustom = (idx: number, field: 'withCatupiry' | 'withBorda') => {
+    setCart((prevCart) => prevCart.map((item, i) => i === idx ? {
+      ...item,
+      [field]: !item[field]
+    } : item));
+  };
+
+  const toggleCartItemIngredient = (idx: number, ing: string) => {
+    setCart((prevCart) => prevCart.map((item, i) => {
+      if (i !== idx) return item;
+      const currentIngredients = item.ingredients || [];
+      let newIngs = [...currentIngredients];
+      if (newIngs.includes(ing)) {
+        newIngs = newIngs.filter(x => x !== ing);
+      } else if (newIngs.length < 5) {
+        newIngs.push(ing);
+      }
+      return { ...item, ingredients: newIngs };
+    }));
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -1612,7 +1643,26 @@ export const ClientDashboard = ({
         clientUid: user?.uid || '',
         clientName: user?.displayName || user?.email || 'Cliente Anônimo',
         clientPhone: userData?.phoneNumber || '',
-        items: cart,
+        items: cart.map(item => {
+          let customSuffix = '';
+          const details: string[] = [];
+          if (item.category === 'Pastéis Salgados') {
+            if (item.withCatupiry) details.push('Catupiry');
+            if (item.withBorda) details.push('Borda de Queijo');
+            if (item.ingredients && item.ingredients.length > 0) {
+              details.push(`Adicionais: ${item.ingredients.join(', ')}`);
+            }
+          }
+          if (details.length > 0) {
+            customSuffix = ` (${details.join(' + ')})`;
+          }
+          return {
+            id: item.id,
+            name: `${item.name}${customSuffix}`,
+            price: item.price,
+            quantity: item.quantity
+          };
+        }),
         total: finalTotal,
         deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
         serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
@@ -1753,6 +1803,8 @@ export const ClientDashboard = ({
           )}
         </div>
       </div>
+
+
 
 
 
@@ -2002,6 +2054,25 @@ export const ClientDashboard = ({
               </button>
             )}
           </div>
+          {activeCategory !== 'Bebidas' && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.05)',
+              border: '1px solid rgba(245, 158, 11, 0.15)',
+              borderRadius: '12px',
+              padding: '0.85rem 1.25rem',
+              marginBottom: '1.5rem',
+              textAlign: 'center',
+              color: '#fff',
+              fontSize: '0.9rem',
+              lineHeight: '1.5'
+            }}>
+              <strong>📢 Qualquer pastel deste cardápio custa apenas R$ 20,00! 🍕⭐</strong>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                A borda e o catupiry são opcionais (não são cobrados por fora) opções personalizáveis abaixo.
+              </div>
+            </div>
+          )}
+
           <div className="pastels-list">
             {filteredProducts.length === 0 ? (
               <div style={{ 
@@ -2028,7 +2099,16 @@ export const ClientDashboard = ({
                   )}
                 </div>
 
-                <div className="pastel-details" style={{ flex: 1, marginLeft: '1.25rem' }}>
+                <div className="pastel-details" style={{ 
+                  flex: 1, 
+                  marginLeft: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                  gap: '0.5rem 1.5rem'
+                }}>
                   {editingId === pastel.id ? (
                     // Modo Edição
                     <div style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -2072,9 +2152,33 @@ export const ClientDashboard = ({
                   ) : (
                     // Modo Visualização
                     <>
-                      <h4>{pastel.name}</h4>
-                      <p>{pastel.description}</p>
-                      <span className="pastel-price">R$ {pastel.price.toFixed(2).replace('.', ',')}</span>
+                      <div style={{ flex: '1 1 auto', minWidth: '90px', maxWidth: '200px', textAlign: 'left' }}>
+                        <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>{pastel.name}</h4>
+                        {pastel.category !== 'Pastéis Salgados' && pastel.description && (
+                          <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{pastel.description}</p>
+                        )}
+                      </div>
+
+                      {pastel.category === 'Pastéis Salgados' && (
+                        <div style={{
+                          fontSize: '0.78rem',
+                          color: 'var(--text-secondary)',
+                          fontStyle: 'italic',
+                          marginTop: '0.2rem',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px dashed rgba(255, 255, 255, 0.08)',
+                          borderRadius: '6px',
+                          padding: '0.35rem 0.5rem',
+                          maxWidth: '320px',
+                          textAlign: 'left'
+                        }}>
+                          ℹ️ <strong>Escolha opcionais e adicionais no carrinho</strong> antes de confirmar o pedido.
+                        </div>
+                      )}
+
+                      {pastel.category !== 'Pastéis Salgados' && pastel.category !== 'Pastéis Doces' && (
+                        <span className="pastel-price">R$ {pastel.price.toFixed(2).replace('.', ',')}</span>
+                      )}
                     </>
                   )}
                 </div>
@@ -2130,18 +2234,35 @@ export const ClientDashboard = ({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div className="cart-items-list" style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {cart.map((item) => (
-                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.name}</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--primary-gold)' }}>R$ {item.price.toFixed(2).replace('.', ',')}</span>
+                  {cart.map((item, idx) => (
+                    <div key={`${item.id}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1 }}>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.name}</span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--primary-gold)' }}>R$ {item.price.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <button type="button" onClick={() => updateQuantity(item.id, -1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Minus size={14} /></button>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.quantity}</span>
+                          <button type="button" onClick={() => updateQuantity(item.id, 1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Plus size={14} /></button>
+                          <button type="button" onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '0.5rem' }}><Trash2 size={14} /></button>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <button type="button" onClick={() => updateQuantity(item.id, -1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Minus size={14} /></button>
-                        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.quantity}</span>
-                        <button type="button" onClick={() => updateQuantity(item.id, 1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Plus size={14} /></button>
-                        <button type="button" onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '0.5rem' }}><Trash2 size={14} /></button>
-                      </div>
+                      
+                      {/* Mostrar resumo rápido das opções no carrinho */}
+                      {item.category === 'Pastéis Salgados' && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                          <span>Catupiry: {item.withCatupiry ? 'Sim ✅' : 'Não ❌'}</span>
+                          <span>·</span>
+                          <span>Borda: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
+                          {item.ingredients && item.ingredients.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span>Adicionais: {item.ingredients.join(', ')}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2466,7 +2587,7 @@ export const ClientDashboard = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 {(orderType === 'dine_in_table'
                   ? ([['pix','Pix 🟡'],['credito','Crédito 💳'],['google_pay','Google Pay 📱'],['pagar_final','Pagar no Final 🍽️']] as const)
-                  : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['google_pay','Google Pay 📱'],['debito','Débito 💴'],['dinheiro','Dinheiro 💵']] as const)
+                  : ([['pix','Pix 🟡'],['credito','Crédito 💳'],['google_pay','Google Pay 📱'],['debito','Débito 💴']] as const)
                 ).map(([val, label]) => (
                   <button
                     key={val}
@@ -2778,14 +2899,68 @@ export const ClientDashboard = ({
             <div>
               <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>Itens</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {cart.map((item) => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                    <span style={{ color: '#fff' }}>
-                      <strong style={{ color: 'var(--primary-gold)' }}>{item.quantity}x</strong> {item.name}
-                    </span>
-                    <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', marginLeft: '1rem' }}>
-                      R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
-                    </span>
+                {cart.map((item, idx) => (
+                  <div key={`${item.id}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '0.6rem', marginBottom: '0.4rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+                      <span style={{ color: '#fff', fontWeight: 600 }}>
+                        <strong style={{ color: 'var(--primary-gold)' }}>{item.quantity}x</strong> {item.name}
+                      </span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', marginLeft: '1rem' }}>
+                        R$ {(item.price * item.quantity).toFixed(2).replace('.', ',')}
+                      </span>
+                    </div>
+                    
+                    {/* Checkboxes de Customização do item salgado no resumo do pedido */}
+                    {item.category === 'Pastéis Salgados' && (
+                      <div className="pastel-customization-box" style={{ maxWidth: '100%', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', marginTop: '0.2rem' }}>
+                        {/* Opcionais */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '0.15rem' }}>
+                          <strong style={{ fontSize: '0.68rem', color: 'var(--primary-gold)' }}>Opcionais:</strong>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!item.withCatupiry}
+                              onChange={() => toggleCartItemCustom(idx, 'withCatupiry')}
+                              style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '11px', height: '11px' }}
+                            />
+                            Catupiry
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.68rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!item.withBorda}
+                              onChange={() => toggleCartItemCustom(idx, 'withBorda')}
+                              style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '11px', height: '11px' }}
+                            />
+                            Borda de Queijo
+                          </label>
+                        </div>
+
+                        {/* Adicionais */}
+                        <div>
+                          <strong style={{ fontSize: '0.68rem', color: 'var(--primary-gold)', display: 'block', marginBottom: '0.1rem' }}>Adicionais (Escolha até 5):</strong>
+                          <div className="pastel-ingredients-grid">
+                            {['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'].map(ing => {
+                              const itemIngredients = item.ingredients || [];
+                              const isChecked = itemIngredients.includes(ing);
+                              const isDisabled = !isChecked && itemIngredients.length >= 5;
+                              return (
+                                <label key={ing} style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem', color: isDisabled ? '#4b5563' : '#fff', cursor: isDisabled ? 'not-allowed' : 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={isDisabled}
+                                    onChange={() => toggleCartItemIngredient(idx, ing)}
+                                    style={{ accentColor: 'var(--primary-gold)', cursor: isDisabled ? 'not-allowed' : 'pointer', width: '11px', height: '11px' }}
+                                  />
+                                  {ing}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {orderType === 'delivery' && deliveryFee > 0 && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
@@ -127,9 +127,15 @@ const MainLayout = () => {
   const role = userData?.role || 'client';
   const staff = userData?.staffFunctions;
 
-  // Atualiza a visualização inicial ativa baseando-se no papel
+  // Atualiza a visualização inicial ativa baseando-se no papel (apenas uma vez ao carregar/fazer login)
+  const initialViewSet = useRef(false);
   useEffect(() => {
-    if (user && userData) {
+    if (!user) {
+      initialViewSet.current = false;
+      return;
+    }
+    if (userData && !initialViewSet.current) {
+      initialViewSet.current = true;
       if (userData.role === 'staff') {
         if (userData.staffFunctions?.cook) setActiveView('cozinha');
         else if (userData.staffFunctions?.attendant) setActiveView('atendimento');

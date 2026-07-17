@@ -11,5 +11,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // O manipulador de fetch vazio é suficiente para o Chrome considerar o PWA como instalável.
+  // Apenas busca na rede normalmente para satisfazer o requisito PWA sem fazer cache no dev
+  event.respondWith(fetch(event.request));
 });
