@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { processOrderLoyaltyStamps } from '../../utils/loyalty';
 import { useAuth } from '../../hooks/useAuth';
 import type { OrderDocument } from '../../types/order';
 import { Play, Check, AlertTriangle, ShoppingBag, MapPin } from 'lucide-react';
@@ -415,6 +416,9 @@ export const DeliveryActive = () => {
     if (!window.confirm('Confirmar que a entrega foi realizada e o pagamento recebido?')) return;
     try {
       await updateDoc(doc(db, 'orders', orderId), { status: 'completed' });
+      if (activeOrder) {
+        await processOrderLoyaltyStamps(orderId, { ...activeOrder, status: 'completed' });
+      }
       setGpsCoords(null);
     } catch (err) {
       console.error('Erro ao concluir entrega:', err);

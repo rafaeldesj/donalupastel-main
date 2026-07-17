@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ChefHat, CreditCard, Bell, Play, Check, Navigation } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc, getDocs, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { processOrderLoyaltyStamps } from '../../utils/loyalty';
 import type { OrderDocument } from '../../types/order';
 
 interface StaffDashboardProps {
@@ -170,6 +171,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
         const order = orders.find(o => o.id === orderId);
         if (order) {
           await checkAndFreeTable(order.tableNumber, orderId);
+          if (newStatus === 'completed') {
+            await processOrderLoyaltyStamps(orderId, order);
+          }
         }
       }
     } catch (error) {
@@ -194,6 +198,10 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
         status: nextStatus,
         deliveredAt: new Date().toISOString()
       });
+
+      if (nextStatus === 'completed') {
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+      }
 
       alert('Pedido marcado como entregue!');
     } catch (err) {

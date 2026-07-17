@@ -7,6 +7,7 @@ import { GooglePayLogo } from '../../components/GooglePayLogo';
 import type { MapAddress } from '../../components/DeliveryMap';
 import { collection, addDoc, query, where, getDocs, doc, updateDoc, getDoc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { processOrderLoyaltyStamps } from '../../utils/loyalty';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { geocodeAddress } from '../../utils/geocoding';
@@ -220,6 +221,7 @@ export const ClientDashboard = ({
   const setCart = externalSetCart !== undefined ? externalSetCart : setLocalCart;
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [useFidelityRescue, setUseFidelityRescue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deliveryAddress, setDeliveryAddress] = useState<MapAddress | null>(null);
   const [routeDistance, setRouteDistance] = useState<number | null>(null);
@@ -324,12 +326,13 @@ export const ClientDashboard = ({
             o.paymentMethod === 'debito'
           );
           
-          const batchPromises = unpaid.map(order => 
-            updateDoc(doc(db, 'orders', order.id), {
+          const batchPromises = unpaid.map(async (order) => {
+            await updateDoc(doc(db, 'orders', order.id), {
               status: 'completed',
               updatedAt: new Date().toISOString()
-            })
-          );
+            });
+            await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+          });
           await Promise.all(batchPromises);
 
           if (user) {
@@ -655,12 +658,13 @@ export const ClientDashboard = ({
         });
       }
 
-      const batchPromises = unpaid.map(order => 
-        updateDoc(doc(db, 'orders', order.id), {
+      const batchPromises = unpaid.map(async (order) => {
+        await updateDoc(doc(db, 'orders', order.id), {
           status: 'completed',
           updatedAt: new Date().toISOString()
-        })
-      );
+        });
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+      });
       await Promise.all(batchPromises);
 
       if (user) {
@@ -736,12 +740,13 @@ export const ClientDashboard = ({
       const paymentData = await paymentsClient.loadPaymentData(paymentDataRequest);
       console.log("Token Google Pay para Fechamento recebido:", paymentData.paymentMethodData.tokenizationData.token);
 
-      const batchPromises = unpaid.map(order => 
-        updateDoc(doc(db, 'orders', order.id), {
+      const batchPromises = unpaid.map(async (order) => {
+        await updateDoc(doc(db, 'orders', order.id), {
           status: 'completed',
           updatedAt: new Date().toISOString()
-        })
-      );
+        });
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+      });
       await Promise.all(batchPromises);
 
       if (user) {
@@ -1293,7 +1298,25 @@ export const ClientDashboard = ({
     ? parseFloat((cartTotal * 0.10).toFixed(2))
     : 0;
 
-  const finalTotal = cartTotal + deliveryFee + serviceFee;
+  // Verifica se há pastéis no carrinho para poder dar o desconto fidelidade
+  const cartHasPastel = cart.some(item => 
+    item.category === 'Pastéis Salgados' || 
+    item.category === 'Pastéis Doces' ||
+    (item.name && (
+      item.name.toLowerCase().includes('pastel') || 
+      item.name.toLowerCase().includes('ninho') || 
+      item.name.toLowerCase().includes('kitkat')
+    ))
+  );
+
+  const stampsCount = userData?.loyaltyStamps || 0;
+  const stampsNeeded = storeConfig?.stampsNeeded || 10;
+  const canRescueFidelity = stampsCount >= stampsNeeded && cartHasPastel;
+
+  // Valor do desconto: 1 pastel de graça (R$ 20,00)
+  const fidelityDiscount = (useFidelityRescue && canRescueFidelity) ? 20.00 : 0;
+
+  const finalTotal = Math.max(0, cartTotal - fidelityDiscount) + deliveryFee + serviceFee;
 
   const paymentLabels: Record<string, string> = {
     pix: 'Pix',
@@ -1372,6 +1395,7 @@ export const ClientDashboard = ({
       clientUid: user?.uid || '',
       clientName: user?.displayName || user?.email || 'Cliente Anônimo',
       clientPhone: userData?.phoneNumber || '',
+      usedFidelityRescue: useFidelityRescue && canRescueFidelity,
       items: cart.map(item => {
         let customSuffix = '';
         const details: string[] = [];
@@ -1392,7 +1416,8 @@ export const ClientDashboard = ({
           id: item.id,
           name: `${item.name}${customSuffix}`,
           price: item.price,
-          quantity: item.quantity
+          quantity: item.quantity,
+          category: item.category
         };
       }),
       total: finalTotal,
@@ -1421,6 +1446,7 @@ export const ClientDashboard = ({
 
     await addDoc(collection(db, 'orders'), orderData);
     setCart([]);
+    setUseFidelityRescue(false);
     setDeliveryAddress(null);
     setRouteDistance(null);
     setShowOrderSummary(false);
@@ -1552,6 +1578,7 @@ export const ClientDashboard = ({
             clientUid: user?.uid || '',
             clientName: user?.displayName || user?.email || 'Cliente Anônimo',
             clientPhone: userData?.phoneNumber || '',
+            usedFidelityRescue: useFidelityRescue && canRescueFidelity,
             items: cart.map(item => {
               let customSuffix = '';
               const details: string[] = [];
@@ -1572,7 +1599,8 @@ export const ClientDashboard = ({
                 id: item.id,
                 name: `${item.name}${customSuffix}`,
                 price: item.price,
-                quantity: item.quantity
+                quantity: item.quantity,
+                category: item.category
               };
             }),
             total: finalTotal,
@@ -1598,6 +1626,7 @@ export const ClientDashboard = ({
 
           await addDoc(collection(db, 'orders'), orderData);
           setCart([]);
+          setUseFidelityRescue(false);
           setDeliveryAddress(null);
           setRouteDistance(null);
           setShowOrderSummary(false);
@@ -1649,7 +1678,31 @@ export const ClientDashboard = ({
       clientUid: user?.uid || '',
       clientName: user?.displayName || user?.email || 'Cliente Anônimo',
       clientPhone: userData?.phoneNumber || '',
-      items: cart,
+      usedFidelityRescue: useFidelityRescue && canRescueFidelity,
+      items: cart.map(item => {
+        let customSuffix = '';
+        const details: string[] = [];
+        if (item.category === 'Pastéis Salgados') {
+          if (item.withCatupiry) details.push('Catupiry');
+          if (item.withBorda) details.push('Borda de Queijo');
+          if (item.ingredients && item.ingredients.length > 0) {
+            details.push(`Adicionais: ${item.ingredients.join(', ')}`);
+          }
+        }
+        if (item.category === 'Pastéis Doces') {
+          if (item.withBorda) details.push('Borda de Kit-Kat');
+        }
+        if (details.length > 0) {
+          customSuffix = ` (${details.join(' + ')})`;
+        }
+        return {
+          id: item.id,
+          name: `${item.name}${customSuffix}`,
+          price: item.price,
+          quantity: item.quantity,
+          category: item.category
+        };
+      }),
       total: finalTotal,
       deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
       serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
@@ -1674,6 +1727,7 @@ export const ClientDashboard = ({
 
     await addDoc(collection(db, 'orders'), orderData);
     setCart([]);
+    setUseFidelityRescue(false);
     setDeliveryAddress(null);
     setRouteDistance(null);
     setShowOrderSummary(false);
@@ -1712,15 +1766,22 @@ export const ClientDashboard = ({
                 o.paymentMethod === 'debito'
               );
               
-              const batchPromises = unpaid.map(order => 
-                updateDoc(doc(db, 'orders', order.id), {
+              const batchPromises = unpaid.map(async (order) => {
+                await updateDoc(doc(db, 'orders', order.id), {
                   status: 'completed',
                   paymentMethod: pointType,
                   pointPaymentIntentId: pointPaymentId,
                   pointDeviceId: selectedDeviceId,
                   updatedAt: new Date().toISOString()
-                })
-              );
+                });
+                await processOrderLoyaltyStamps(order.id, { 
+                  ...order, 
+                  status: 'completed', 
+                  paymentMethod: pointType,
+                  pointPaymentIntentId: pointPaymentId,
+                  pointDeviceId: selectedDeviceId 
+                });
+              });
               await Promise.all(batchPromises);
 
               if (user) {
@@ -2004,6 +2065,7 @@ export const ClientDashboard = ({
         clientUid: user?.uid || '',
         clientName: user?.displayName || user?.email || 'Cliente Anônimo',
         clientPhone: userData?.phoneNumber || '',
+        usedFidelityRescue: useFidelityRescue && canRescueFidelity,
         items: cart.map(item => {
           let customSuffix = '';
           const details: string[] = [];
@@ -2024,7 +2086,8 @@ export const ClientDashboard = ({
             id: item.id,
             name: `${item.name}${customSuffix}`,
             price: item.price,
-            quantity: item.quantity
+            quantity: item.quantity,
+            category: item.category
           };
         }),
         total: finalTotal,
@@ -2051,6 +2114,7 @@ export const ClientDashboard = ({
 
       await addDoc(collection(db, 'orders'), orderData);
       setCart([]);
+      setUseFidelityRescue(false);
       setDeliveryAddress(null);
       setRouteDistance(null);
       setShowOrderSummary(false);
@@ -2083,17 +2147,65 @@ export const ClientDashboard = ({
         <div className="client-grid-loyalty">
           <div className="loyalty-card" style={{ padding: '2rem' }}>
             <h3>Cartão Fidelidade Dona Lu</h3>
-            <p>Junte 10 carimbos e ganhe um pastel doce da sua escolha!</p>
-            <div className="stamps-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginTop: '2rem', gap: '1rem' }}>
-              {[...Array(10)].map((_, i) => (
-                <div key={i} className={`stamp-slot ${i < 3 ? 'stamped' : ''}`} style={{ padding: '0.5rem', fontSize: i < 3 ? '1.5rem' : '0.9rem' }}>
-                  {i < 3 ? '🥟' : i + 1}
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              Total de carimbos ativos: <strong>3 de 10</strong>. Faltam 7 para o próximo pastel grátis!
-            </div>
+            <p>Junte 10 carimbos e ganhe um pastel de graça à sua escolha (doce ou salgado)!</p>
+            {(() => {
+              const stampsCount = userData?.loyaltyStamps || 0;
+              const stampsNeeded = storeConfig?.stampsNeeded || 10;
+              const activeStamps = stampsCount % stampsNeeded;
+              const rewardsCount = Math.floor(stampsCount / stampsNeeded);
+              const stampsLeft = Math.max(0, stampsNeeded - activeStamps);
+
+              return (
+                <>
+                  {rewardsCount > 0 && (
+                    <div style={{
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      marginBottom: '1rem',
+                      color: '#34d399',
+                      fontSize: '0.88rem',
+                      fontWeight: 600,
+                      textAlign: 'center'
+                    }}>
+                      🌟 Parabéns! Você tem <strong>{rewardsCount} pastel(éis) grátis</strong> para resgatar na sua próxima compra!
+                    </div>
+                  )}
+
+                  <div className="stamps-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginTop: '1.5rem', gap: '1rem' }}>
+                    {[...Array(stampsNeeded)].map((_, i) => {
+                      const isStamped = i < activeStamps;
+                      return (
+                        <div 
+                          key={i} 
+                          className={`stamp-slot ${isStamped ? 'stamped' : ''}`} 
+                          style={{ 
+                            padding: '0.5rem', 
+                            fontSize: isStamped ? '1.5rem' : '0.9rem',
+                            border: isStamped ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.1)'
+                          }}
+                        >
+                          {isStamped ? '🥟' : i + 1}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    Total de carimbos ativos: <strong>{activeStamps} de {stampsNeeded}</strong>.
+                    {stampsLeft > 0 
+                      ? ` Faltam ${stampsLeft} para o próximo pastel grátis!` 
+                      : ' Você completou o cartão! Pode resgatar seu pastel grátis.'
+                    }
+                    <br />
+                    <span style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.3)', display: 'block', marginTop: '0.4rem' }}>
+                      (Saldo total histórico: {stampsCount} carimbos)
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           <div className="loyalty-card" style={{ padding: '2rem', textAlign: 'left' }}>
@@ -3020,6 +3132,60 @@ export const ClientDashboard = ({
                   </button>
                 ))}
               </div>
+
+              {/* Opção de Resgate Fidelidade (10+ carimbos) */}
+              {stampsCount >= stampsNeeded && (
+                <div style={{
+                  marginTop: '0.85rem',
+                  background: 'rgba(245, 158, 11, 0.04)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  borderRadius: '12px',
+                  padding: '0.85rem 1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                    <input
+                      type="checkbox"
+                      id="fidelity-rescue-check"
+                      checked={useFidelityRescue}
+                      disabled={!cartHasPastel}
+                      onChange={(e) => setUseFidelityRescue(e.target.checked)}
+                      style={{ 
+                        width: '18px', 
+                        height: '18px', 
+                        accentColor: 'var(--primary-gold)', 
+                        cursor: cartHasPastel ? 'pointer' : 'not-allowed', 
+                        marginTop: '2px' 
+                      }}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <label 
+                        htmlFor="fidelity-rescue-check" 
+                        style={{ 
+                          fontSize: '0.88rem', 
+                          fontWeight: 700, 
+                          color: cartHasPastel ? '#fff' : 'var(--text-secondary)', 
+                          cursor: cartHasPastel ? 'pointer' : 'not-allowed', 
+                          userSelect: 'none' 
+                        }}
+                      >
+                        🎁 Resgatar Pastel Grátis!
+                      </label>
+                      <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                        Você acumulou {stampsCount} carimbos e pode resgatar 1 pastel (doce ou salgado) de graça neste pedido!
+                      </span>
+                    </div>
+                  </div>
+
+                  {!cartHasPastel && (
+                    <span style={{ fontSize: '0.75rem', color: '#fca5a5', fontStyle: 'italic' }}>
+                      ⚠️ Adicione pelo menos um pastel (doce ou salgado) no carrinho para poder usar seu resgate.
+                    </span>
+                  )}
+                </div>
+              )}
 
               {paymentMethod === 'dinheiro' && (
                 <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
