@@ -1382,6 +1382,9 @@ export const ClientDashboard = ({
             details.push(`Adicionais: ${item.ingredients.join(', ')}`);
           }
         }
+        if (item.category === 'Pastéis Doces') {
+          if (item.withBorda) details.push('Borda de Kit-Kat');
+        }
         if (details.length > 0) {
           customSuffix = ` (${details.join(' + ')})`;
         }
@@ -1558,6 +1561,9 @@ export const ClientDashboard = ({
                 if (item.ingredients && item.ingredients.length > 0) {
                   details.push(`Adicionais: ${item.ingredients.join(', ')}`);
                 }
+              }
+              if (item.category === 'Pastéis Doces') {
+                if (item.withBorda) details.push('Borda de Kit-Kat');
               }
               if (details.length > 0) {
                 customSuffix = ` (${details.join(' + ')})`;
@@ -2008,6 +2014,9 @@ export const ClientDashboard = ({
               details.push(`Adicionais: ${item.ingredients.join(', ')}`);
             }
           }
+          if (item.category === 'Pastéis Doces') {
+            if (item.withBorda) details.push('Borda de Kit-Kat');
+          }
           if (details.length > 0) {
             customSuffix = ` (${details.join(' + ')})`;
           }
@@ -2423,7 +2432,9 @@ export const ClientDashboard = ({
             }}>
               <strong>📢 Qualquer pastel deste cardápio custa apenas R$ 20,00! 🍕⭐</strong>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                A borda e o catupiry são opcionais (não são cobrados por fora) opções personalizáveis abaixo.
+                {activeCategory === 'Pastéis Doces' 
+                  ? 'A borda de Kit-Kat é opcional (não é cobrada por fora) opções personalizáveis abaixo.'
+                  : 'A borda e o catupiry são opcionais (não são cobrados por fora) opções personalizáveis abaixo.'}
               </div>
             </div>
           )}
@@ -2514,7 +2525,7 @@ export const ClientDashboard = ({
                         )}
                       </div>
 
-                      {pastel.category === 'Pastéis Salgados' && (
+                      {(pastel.category === 'Pastéis Salgados' || pastel.category === 'Pastéis Doces') && (
                         <div style={{
                           fontSize: '0.78rem',
                           color: 'var(--text-secondary)',
@@ -2616,6 +2627,11 @@ export const ClientDashboard = ({
                               <span>Adicionais: {item.ingredients.join(', ')}</span>
                             </>
                           )}
+                        </div>
+                      )}
+                      {item.category === 'Pastéis Doces' && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                          <span>Borda Kit-Kat: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
                         </div>
                       )}
                     </div>
@@ -3281,6 +3297,24 @@ export const ClientDashboard = ({
                       </span>
                     </div>
                     
+                    {/* Checkboxes de Customização do item doce no resumo do pedido */}
+                    {item.category === 'Pastéis Doces' && (
+                      <div className="pastel-customization-box" style={{ maxWidth: '100%', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', marginTop: '0.2rem', padding: '0.35rem 0.45rem' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
+                          <strong style={{ fontSize: '0.68rem', color: 'var(--primary-gold)' }}>Opcionais:</strong>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.68rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              checked={!!item.withBorda}
+                              onChange={() => toggleCartItemCustom(idx, 'withBorda')}
+                              style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '11px', height: '11px' }}
+                            />
+                            Borda de Kit-Kat
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Checkboxes de Customização do item salgado no resumo do pedido */}
                     {item.category === 'Pastéis Salgados' && (
                       <div className="pastel-customization-box" style={{ maxWidth: '100%', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', marginTop: '0.2rem' }}>
