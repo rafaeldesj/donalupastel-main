@@ -201,9 +201,26 @@ export const UserManagement = () => {
 
     try {
       if (editUser) {
-        // Atualiza usuário existente no Firestore
-        await updateDoc(doc(db, 'users', editUser.uid), payload as any);
-        setSuccess('Usuário atualizado com sucesso!');
+        const isEmailChanged = email.trim().toLowerCase() !== editUser.email;
+
+        if (isEmailChanged) {
+          // Se o e-mail mudou, deletamos o vínculo com o UID antigo e criamos um novo pré-cadastro
+          // de forma que o cliente precise se cadastrar/logar com o novo e-mail para ter acesso.
+          await deleteDoc(doc(db, 'users', editUser.uid));
+
+          const docRef = await addDoc(collection(db, 'users'), {
+            ...payload,
+            tempPassword: editUser.tempPassword || '',
+            uid: '' // Reseta o UID para aguardar o primeiro login com o novo e-mail
+          });
+          await updateDoc(doc(db, 'users', docRef.id), { uid: docRef.id });
+
+          setSuccess('E-mail alterado! O usuário precisará logar com o novo e-mail para reativar seu cadastro.');
+        } else {
+          // Se o e-mail continuou o mesmo, apenas atualiza em tempo real
+          await updateDoc(doc(db, 'users', editUser.uid), payload as any);
+          setSuccess('Usuário atualizado com sucesso!');
+        }
         
         if (user) {
           await logAuditAction({
@@ -212,7 +229,9 @@ export const UserManagement = () => {
             userName: userData?.name || user.displayName || 'Administrador',
             actionType: 'UPDATE_USER',
             title: 'Edição de Usuário',
-            description: `O administrador atualizou os dados do usuário "${name}" (E-mail: "${email.trim().toLowerCase()}", Papel: "${role}").`
+            description: isEmailChanged 
+              ? `O administrador alterou o e-mail do usuário "${editUser.name}" de "${editUser.email}" para "${email.trim().toLowerCase()}" (Nível: "${role}").`
+              : `O administrador atualizou os dados do usuário "${name}" (E-mail: "${email.trim().toLowerCase()}", Papel: "${role}").`
           });
         }
       } else {
