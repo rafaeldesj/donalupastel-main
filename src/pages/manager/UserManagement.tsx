@@ -149,6 +149,13 @@ export const UserManagement = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    const currentUserRole = userData?.role;
+    if (currentUserRole !== 'developer' && currentUserRole !== 'owner') {
+      setError('Você não possui essa permissão. Consulte o proprietário.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
     if (!window.confirm('Tem certeza de que deseja excluir este usuário do sistema?')) return;
     const targetUser = users.find((u) => u.uid === userId);
     
@@ -168,9 +175,14 @@ export const UserManagement = () => {
       }
       
       setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError('Erro ao excluir usuário.');
+      if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
+        setError('Você não possui essa permissão. Consulte o proprietário.');
+      } else {
+        setError('Erro ao excluir usuário.');
+      }
+      setTimeout(() => setError(null), 5000);
     }
   };
 
