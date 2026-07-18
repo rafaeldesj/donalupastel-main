@@ -27,6 +27,7 @@ interface StoreConfig {
   pointAir2Id?: string;
   pointMiniNfc2Id?: string;
   disabledPaymentMethods?: string[];
+  paymentMethodsThemes?: Record<string, 'light' | 'dark'>;
 }
 
 export const SettingsPage = () => {
@@ -121,7 +122,16 @@ export const SettingsPage = () => {
             pointAir2Id: '',
             pointMiniNfc2Id: '',
             maxIngredientsLimit: 5,
-            availableIngredients: ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']
+            availableIngredients: ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'],
+            paymentMethodsThemes: {
+              pix: 'dark',
+              credito: 'dark',
+              google_pay: 'dark',
+              debito_point: 'dark',
+              credito_point: 'dark',
+              dinheiro: 'dark',
+              pagar_final: 'dark'
+            }
           };
           await setDoc(docRef, defaults);
           setStoreConfig(defaults);
@@ -262,7 +272,8 @@ export const SettingsPage = () => {
       const docRef = doc(db, 'settings', 'store_config');
       console.log("Salvando formas de pagamento desativadas no Firestore:", storeConfig.disabledPaymentMethods || []);
       await updateDoc(docRef, {
-        disabledPaymentMethods: storeConfig.disabledPaymentMethods || []
+        disabledPaymentMethods: storeConfig.disabledPaymentMethods || [],
+        paymentMethodsThemes: storeConfig.paymentMethodsThemes || {}
       });
 
       await logAuditAction({
@@ -847,6 +858,7 @@ export const SettingsPage = () => {
                     { id: 'pagar_final', name: 'Pagar no Final', desc: 'Permitir que o cliente pague ao final do atendimento na mesa.', label: 'Pagar no Final 🍽️' }
                   ].map((method) => {
                     const isDisabled = (storeConfig?.disabledPaymentMethods || []).includes(method.id);
+                    const currentTheme = storeConfig?.paymentMethodsThemes?.[method.id] || 'dark';
                     return (
                       <div 
                         key={method.id}
@@ -858,10 +870,12 @@ export const SettingsPage = () => {
                           background: 'rgba(255,255,255,0.01)',
                           border: '1px solid rgba(255,255,255,0.04)',
                           borderRadius: '12px',
-                          transition: 'all 0.2s'
+                          transition: 'all 0.2s',
+                          flexWrap: 'wrap',
+                          gap: '1rem'
                         }}
                       >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: 1, minWidth: '250px' }}>
                           <span style={{ fontWeight: 600, fontSize: '0.95rem', color: isDisabled ? 'var(--text-secondary)' : '#fff' }}>
                             {method.label}
                           </span>
@@ -870,35 +884,90 @@ export const SettingsPage = () => {
                           </span>
                         </div>
 
-                        {/* Toggle Switch */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const disabledList = storeConfig?.disabledPaymentMethods || [];
-                            let newList: string[];
-                            if (isDisabled) {
-                              newList = disabledList.filter(id => id !== method.id);
-                            } else {
-                              newList = [...disabledList, method.id];
-                            }
-                            setStoreConfig(prev => prev ? { ...prev, disabledPaymentMethods: newList } : prev);
-                          }}
-                          style={{
-                            background: isDisabled ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            border: isDisabled ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-                            color: isDisabled ? '#ef4444' : '#10b981',
-                            padding: '0.4rem 1rem',
-                            borderRadius: '20px',
-                            fontSize: '0.8rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s',
-                            minWidth: '80px',
-                            textAlign: 'center'
-                          }}
-                        >
-                          {isDisabled ? 'Ocultado' : 'Ativo'}
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                          {/* Segmented Control for Theme Selection */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Tema:</span>
+                            <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '2px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const themes = storeConfig.paymentMethodsThemes || {};
+                                  setStoreConfig(prev => prev ? {
+                                    ...prev,
+                                    paymentMethodsThemes: { ...themes, [method.id]: 'light' }
+                                  } : prev);
+                                }}
+                                style={{
+                                  background: currentTheme === 'light' ? 'var(--primary-gold)' : 'transparent',
+                                  border: 'none',
+                                  color: currentTheme === 'light' ? '#0b0f19' : 'var(--text-secondary)',
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                Claro
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const themes = storeConfig.paymentMethodsThemes || {};
+                                  setStoreConfig(prev => prev ? {
+                                    ...prev,
+                                    paymentMethodsThemes: { ...themes, [method.id]: 'dark' }
+                                  } : prev);
+                                }}
+                                style={{
+                                  background: currentTheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                  border: 'none',
+                                  color: currentTheme === 'dark' ? '#ffffff' : 'var(--text-secondary)',
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                Escuro
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Toggle Switch */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const disabledList = storeConfig?.disabledPaymentMethods || [];
+                              let newList: string[];
+                              if (isDisabled) {
+                                newList = disabledList.filter(id => id !== method.id);
+                              } else {
+                                newList = [...disabledList, method.id];
+                              }
+                              setStoreConfig(prev => prev ? { ...prev, disabledPaymentMethods: newList } : prev);
+                            }}
+                            style={{
+                              background: isDisabled ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              border: isDisabled ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                              color: isDisabled ? '#ef4444' : '#10b981',
+                              padding: '0.4rem 1rem',
+                              borderRadius: '20px',
+                              fontSize: '0.8rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              minWidth: '80px',
+                              textAlign: 'center'
+                            }}
+                          >
+                            {isDisabled ? 'Ocultado' : 'Ativo'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

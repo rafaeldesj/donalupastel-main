@@ -3131,50 +3131,68 @@ export const ClientDashboard = ({
                     ];
                   }
                   return methods.filter(([val]) => !disabled.includes(val)) as any;
-                })().map(([val, label]: [string, string]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod(val as any);
-                      setChangeFor('');
-                      setNoChangeNeeded(false);
-                    }}
-                    style={{
-                      padding: '0.6rem 0.5rem',
-                      borderRadius: '30px',
-                      border: paymentMethod === val
-                        ? '2px solid var(--primary-gold)'
-                        : '1px solid rgba(255,255,255,0.15)',
-                      background: paymentMethod === val
-                        ? 'rgba(245,158,11,0.16)'
-                        : '#000000',
-                      color: paymentMethod === val ? 'var(--primary-gold)' : '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textAlign: 'center',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.35rem',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                    }}
-                  >
-                    {val === 'google_pay' ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: '#ffffff' }}>
-                        Pagar com <GooglePayLogo height="14px" color="#ffffff" />
-                      </span>
-                    ) : val === 'pix' ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                        Pix <QrCode size={14} style={{ color: paymentMethod === val ? 'var(--primary-gold)' : '#ffffff' }} />
-                      </span>
-                    ) : (
-                      label
-                    )}
-                  </button>
-                ))}
+                })().map(([val, label]: [string, string]) => {
+                  const isSelected = paymentMethod === val;
+                  const buttonTheme = storeConfig?.paymentMethodsThemes?.[val] || 'dark';
+                  const isLight = buttonTheme === 'light';
+
+                  let bg = '#000000';
+                  let border = '1px solid rgba(255,255,255,0.15)';
+                  let color = '#ffffff';
+
+                  if (isLight) {
+                    bg = '#ffffff';
+                    border = '1px solid #d1d5db';
+                    color = '#0b0f19';
+                  }
+
+                  if (isSelected) {
+                    border = '2px solid var(--primary-gold)';
+                    bg = isLight ? '#fef3c7' : 'rgba(245,158,11,0.16)';
+                    color = 'var(--primary-gold)';
+                  }
+
+                  return (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod(val as any);
+                        setChangeFor('');
+                        setNoChangeNeeded(false);
+                      }}
+                      style={{
+                        padding: '0.6rem 0.5rem',
+                        borderRadius: '30px',
+                        border,
+                        background: bg,
+                        color,
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        textAlign: 'center',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.35rem',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }}
+                    >
+                      {val === 'google_pay' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: isSelected ? 'var(--primary-gold)' : (isLight ? '#000000' : '#ffffff') }}>
+                          Pagar com <GooglePayLogo height="14px" color={isSelected ? 'var(--primary-gold)' : (isLight ? '#000000' : '#ffffff')} />
+                        </span>
+                      ) : val === 'pix' ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          Pix <QrCode size={14} style={{ color: isSelected ? 'var(--primary-gold)' : (isLight ? '#0b0f19' : '#ffffff') }} />
+                        </span>
+                      ) : (
+                        label
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Opção de Resgate Fidelidade (10+ carimbos) */}
@@ -3636,24 +3654,29 @@ export const ClientDashboard = ({
               <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>💳 Pagamento</h4>
               {paymentMethod === 'google_pay' ? (
                 <div style={{ marginTop: '0.25rem' }}>
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      background: '#000000',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#ffffff',
-                      borderRadius: '30px',
-                      padding: '0.5rem 1.2rem',
-                      fontSize: '0.9rem',
-                      fontWeight: 700,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '0.35rem',
-                      userSelect: 'none',
-                    }}
-                  >
-                    Pagar com <GooglePayLogo height="16px" color="#ffffff" />
-                  </div>
+                  {(() => {
+                    const isLight = storeConfig?.paymentMethodsThemes?.google_pay === 'light';
+                    return (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          background: isLight ? '#ffffff' : '#000000',
+                          border: isLight ? '1px solid #d1d5db' : '1px solid rgba(255,255,255,0.15)',
+                          color: isLight ? '#000000' : '#ffffff',
+                          borderRadius: '30px',
+                          padding: '0.5rem 1.2rem',
+                          fontSize: '0.9rem',
+                          fontWeight: 700,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.35rem',
+                          userSelect: 'none',
+                        }}
+                      >
+                        Pagar com <GooglePayLogo height="16px" color={isLight ? '#000000' : '#ffffff'} />
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <p style={{ margin: 0, fontSize: '0.9rem', color: '#fff', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -4499,44 +4522,66 @@ export const ClientDashboard = ({
                               ['dinheiro', 'Dinheiro 💵']
                             ];
                             return methods.filter(([val]) => !disabled.includes(val)) as any;
-                          })().map(([val, label]: [string, string]) => (
-                            <button
-                              key={val}
-                              type="button"
-                              onClick={() => {
-                                setBillPaymentMethod(val as any);
-                                setBillChangeFor('');
-                                setBillNoChangeNeeded(false);
-                              }}
-                              style={{
-                                padding: '0.5rem',
-                                borderRadius: '30px',
-                                border: billPaymentMethod === val ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.15)',
-                                background: billPaymentMethod === val ? 'rgba(245,158,11,0.16)' : '#000000',
-                                color: billPaymentMethod === val ? 'var(--primary-gold)' : '#ffffff',
-                                fontWeight: 700,
-                                fontSize: '0.8rem',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '0.35rem',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-                              }}
-                            >
-                              {val === 'google_pay' ? (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: '#ffffff' }}>
-                                  Pagar com <GooglePayLogo height="12px" color="#ffffff" />
-                                </span>
-                              ) : val === 'pix' ? (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                                  Pix <QrCode size={12} style={{ color: billPaymentMethod === val ? 'var(--primary-gold)' : '#ffffff' }} />
-                                </span>
-                              ) : (
-                                label
-                              )}
-                            </button>
-                          ))}
+                          })().map(([val, label]: [string, string]) => {
+                            const isSelected = billPaymentMethod === val;
+                            const buttonTheme = storeConfig?.paymentMethodsThemes?.[val] || 'dark';
+                            const isLight = buttonTheme === 'light';
+
+                            let bg = '#000000';
+                            let border = '1px solid rgba(255,255,255,0.15)';
+                            let color = '#ffffff';
+
+                            if (isLight) {
+                              bg = '#ffffff';
+                              border = '1px solid #d1d5db';
+                              color = '#0b0f19';
+                            }
+
+                            if (isSelected) {
+                              border = '2px solid var(--primary-gold)';
+                              bg = isLight ? '#fef3c7' : 'rgba(245,158,11,0.16)';
+                              color = 'var(--primary-gold)';
+                            }
+
+                            return (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => {
+                                  setBillPaymentMethod(val as any);
+                                  setBillChangeFor('');
+                                  setBillNoChangeNeeded(false);
+                                }}
+                                style={{
+                                  padding: '0.5rem',
+                                  borderRadius: '30px',
+                                  border,
+                                  background: bg,
+                                  color,
+                                  fontWeight: 700,
+                                  fontSize: '0.8rem',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.35rem',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                                }}
+                              >
+                                {val === 'google_pay' ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: isSelected ? 'var(--primary-gold)' : (isLight ? '#000000' : '#ffffff') }}>
+                                    Pagar com <GooglePayLogo height="12px" color={isSelected ? 'var(--primary-gold)' : (isLight ? '#000000' : '#ffffff')} />
+                                  </span>
+                                ) : val === 'pix' ? (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                    Pix <QrCode size={12} style={{ color: isSelected ? 'var(--primary-gold)' : (isLight ? '#0b0f19' : '#ffffff') }} />
+                                  </span>
+                                ) : (
+                                  label
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -4698,15 +4743,26 @@ export const ClientDashboard = ({
                           {billSubmitting ? 'Processando Cartão...' : `Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')} via Cartão`}
                         </button>
                       ) : billPaymentMethod === 'google_pay' ? (
-                        <button
-                          type="button"
-                          onClick={handleCloseBillGooglePay}
-                          disabled={billSubmitting}
-                          className="auth-btn"
-                          style={{ background: 'linear-gradient(135deg, #000000 0%, #202020 100%)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontWeight: 700, padding: '0.7rem' }}
-                        >
-                          {billSubmitting ? 'Iniciando Google Pay...' : `Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')} via Google Pay`}
-                        </button>
+                        (() => {
+                          const isLight = storeConfig?.paymentMethodsThemes?.google_pay === 'light';
+                          return (
+                            <button
+                              type="button"
+                              onClick={handleCloseBillGooglePay}
+                              disabled={billSubmitting}
+                              className="auth-btn"
+                              style={{
+                                background: isLight ? 'linear-gradient(135deg, #ffffff 0%, #f3f4f6 100%)' : 'linear-gradient(135deg, #000000 0%, #202020 100%)',
+                                border: isLight ? '1px solid #d1d5db' : '1px solid rgba(255,255,255,0.15)',
+                                color: isLight ? '#000000' : '#ffffff',
+                                fontWeight: 700,
+                                padding: '0.7rem'
+                              }}
+                            >
+                              {billSubmitting ? 'Iniciando Google Pay...' : `Pagar R$ ${totalToPay.toFixed(2).replace('.', ',')} via Google Pay`}
+                            </button>
+                          );
+                        })()
                       ) : (billPaymentMethod === 'debito_point' || billPaymentMethod === 'credito_point') ? (
                         <button
                           type="button"
