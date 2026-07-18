@@ -15,6 +15,8 @@ interface StoreConfig {
   closingTime: string;
   storeAddress: string;
   phoneContact: string;
+  maxIngredientsLimit?: number;
+  availableIngredients?: string[];
   devPercentage?: number;
   devClientId?: string;
   devAccessToken?: string;
@@ -116,7 +118,9 @@ export const SettingsPage = () => {
             pointSmart2Id: '',
             pointPro3Id: '',
             pointAir2Id: '',
-            pointMiniNfc2Id: ''
+            pointMiniNfc2Id: '',
+            maxIngredientsLimit: 5,
+            availableIngredients: ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']
           };
           await setDoc(docRef, defaults);
           setStoreConfig(defaults);
@@ -1259,6 +1263,138 @@ export const SettingsPage = () => {
                       onChange={(e) => setStoreConfig(prev => ({ ...prev, phoneContact: e.target.value }))}
                       required
                     />
+                  </div>
+
+                  {/* Seção de Ingredientes Adicionais */}
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1.5rem', marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--primary-gold)' }}>⚙️ Gestão de Ingredientes Adicionais</h3>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="input-group">
+                        <label>Quantidade Máxima Permitida por Pastel</label>
+                        <input
+                          type="number"
+                          className="pastel-edit-input"
+                          min="1"
+                          max="20"
+                          value={storeConfig.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5}
+                          onChange={(e) => setStoreConfig(prev => ({ ...prev, maxIngredientsLimit: parseInt(e.target.value) || 5 }))}
+                          required
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>Cadastrar Novo Ingrediente</label>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <input
+                            type="text"
+                            id="new-ingredient-input"
+                            className="pastel-edit-input"
+                            placeholder="Ex: Cheddar, Palmito"
+                            style={{ flex: 1 }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const val = e.currentTarget.value.trim();
+                                if (val) {
+                                  const currentList = storeConfig.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'];
+                                  if (!currentList.includes(val)) {
+                                    setStoreConfig(prev => ({
+                                      ...prev,
+                                      availableIngredients: [...currentList, val]
+                                    }));
+                                  }
+                                  e.currentTarget.value = '';
+                                }
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const input = document.getElementById('new-ingredient-input') as HTMLInputElement;
+                              const val = input?.value.trim();
+                              if (val) {
+                                const currentList = storeConfig.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'];
+                                if (!currentList.includes(val)) {
+                                  setStoreConfig(prev => ({
+                                    ...prev,
+                                    availableIngredients: [...currentList, val]
+                                  }));
+                                }
+                                if (input) input.value = '';
+                              }
+                            }}
+                            style={{
+                              background: 'var(--primary-gold)',
+                              color: '#000',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '0 1rem',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="input-group">
+                      <label>Ingredientes Cadastrados ({ (storeConfig.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']).length })</label>
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.5rem',
+                        background: 'rgba(255,255,255,0.01)',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                        borderRadius: '12px',
+                        padding: '0.75rem',
+                        minHeight: '60px'
+                      }}>
+                        {(storeConfig.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']).map((ing, index) => (
+                          <div
+                            key={ing + "-" + index}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              background: 'rgba(245,158,11,0.1)',
+                              border: '1px solid rgba(245,158,11,0.2)',
+                              color: 'var(--primary-gold)',
+                              borderRadius: '8px',
+                              padding: '0.3rem 0.6rem',
+                              fontSize: '0.8rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            <span>{ing}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentList = storeConfig.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'];
+                                setStoreConfig(prev => ({
+                                  ...prev,
+                                  availableIngredients: currentList.filter(i => i !== ing)
+                                }));
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'rgba(255,255,255,0.4)',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                padding: '0 0.1rem',
+                                display: 'flex',
+                                alignItems: 'center'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <button

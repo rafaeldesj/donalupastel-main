@@ -3525,12 +3525,15 @@ export const ClientDashboard = ({
 
                         {/* Adicionais */}
                         <div>
-                          <strong style={{ fontSize: '0.68rem', color: 'var(--primary-gold)', display: 'block', marginBottom: '0.1rem' }}>Adicionais (Escolha até 5):</strong>
+                          <strong style={{ fontSize: '0.68rem', color: 'var(--primary-gold)', display: 'block', marginBottom: '0.1rem' }}>
+                            Adicionais (Escolha até {storeConfig?.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5}):
+                          </strong>
                           <div className="pastel-ingredients-grid">
-                            {['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'].map(ing => {
+                            {(storeConfig?.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']).map((ing: string) => {
                               const itemIngredients = item.ingredients || [];
                               const isChecked = itemIngredients.includes(ing);
-                              const isDisabled = !isChecked && itemIngredients.length >= 5;
+                              const maxLimit = storeConfig?.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5;
+                              const isDisabled = !isChecked && itemIngredients.length >= maxLimit;
                               return (
                                 <label key={ing} style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.68rem', color: isDisabled ? '#4b5563' : '#fff', cursor: isDisabled ? 'not-allowed' : 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
                                   <input
@@ -4896,20 +4899,22 @@ export const ClientDashboard = ({
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--primary-gold)' }}>Adicionais (Opcionais):</h4>
-                    <span style={{ fontSize: '0.75rem', color: tempIngredients.length >= 5 ? 'var(--primary-gold)' : 'var(--text-secondary)' }}>
-                      {tempIngredients.length}/5 selecionados
+                    <span style={{ fontSize: '0.75rem', color: tempIngredients.length >= (storeConfig?.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5) ? 'var(--primary-gold)' : 'var(--text-secondary)' }}>
+                      {tempIngredients.length}/{storeConfig?.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5} selecionados
                     </span>
                   </div>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '0.25rem' }}>
-                    {['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'].map(ing => {
+                  {/* Removido o maxHeight e overflowY para deixar o grid crescer fluido de forma natural */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    {(storeConfig?.availableIngredients || ['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon']).map((ing: string) => {
                       const isChecked = tempIngredients.includes(ing);
-                      const isDisabled = !isChecked && tempIngredients.length >= 5;
+                      const maxLimit = storeConfig?.maxIngredientsLimit !== undefined ? storeConfig.maxIngredientsLimit : 5;
+                      const isDisabled = !isChecked && tempIngredients.length >= maxLimit;
                       
                       const handleIngredientToggle = () => {
                         if (isChecked) {
                           setTempIngredients(prev => prev.filter(i => i !== ing));
-                        } else if (tempIngredients.length < 5) {
+                        } else if (tempIngredients.length < maxLimit) {
                           setTempIngredients(prev => [...prev, ing]);
                         }
                       };
