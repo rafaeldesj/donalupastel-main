@@ -107,8 +107,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             try {
               let foundPreRegistration = false;
               if (currentUser.email) {
-                const preRegQuery = query(collection(db, 'users'), where('email', '==', currentUser.email), limit(1));
-                const querySnapshot = await getDocs(preRegQuery);
+                const emailLower = currentUser.email.toLowerCase();
+                const preRegQuery = query(collection(db, 'users'), where('email', '==', emailLower), limit(1));
+                let querySnapshot = await getDocs(preRegQuery);
+                
+                if (querySnapshot.empty && currentUser.email !== emailLower) {
+                  const preRegQueryOrig = query(collection(db, 'users'), where('email', '==', currentUser.email), limit(1));
+                  querySnapshot = await getDocs(preRegQueryOrig);
+                }
                 
                 if (!querySnapshot.empty) {
                   const preRegDoc = querySnapshot.docs[0];
@@ -132,11 +138,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               }
 
               if (!foundPreRegistration) {
-                setUserData(null);
+                setUserData(prev => prev ? prev : null);
               }
             } catch (err) {
               console.error("Erro ao buscar pré-cadastro do usuário:", err);
-              setUserData(null);
+              setUserData(prev => prev ? prev : null);
             }
           }
           setLoading(false);
