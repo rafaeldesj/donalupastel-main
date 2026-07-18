@@ -3,6 +3,7 @@ import { collection, query, onSnapshot, doc, setDoc, where, updateDoc, deleteDoc
 import { db } from '../../config/firebase';
 import type { OrderDocument } from '../../types/order';
 import type { UserDocument } from '../../types/user';
+import { processOrderLoyaltyStamps } from '../../utils/loyalty';
 import { useAuth } from '../../hooks/useAuth';
 import { Users, AlertCircle, ShoppingBag, ShieldAlert, ArrowRightLeft, Lock, Unlock } from 'lucide-react';
 
@@ -150,14 +151,50 @@ export const TableMap = () => {
 
   const { userData } = useAuth();
 
+  const checkAndFreeTable = async (orderTableNumber?: string | null, orderIdToExclude?: string) => {
+    if (!orderTableNumber) return;
+    const otherActive = activeOrders.some(o => 
+      o.id !== orderIdToExclude && 
+      o.orderType === 'dine_in_table' && 
+      o.tableNumber === orderTableNumber && 
+      !['completed', 'cancelled'].includes(o.status)
+    );
+    
+    if (!otherActive) {
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('tableNumber', '==', orderTableNumber));
+        const querySnapshot = await getDocs(q);
+        const batchPromises = querySnapshot.docs.map(userDoc => 
+          updateDoc(doc(db, 'users', userDoc.id), {
+            tableNumber: null,
+            updatedAt: new Date().toISOString()
+          })
+        );
+        await Promise.all(batchPromises);
+      } catch (err) {
+        console.error("Erro ao desvincular mesa após encerramento:", err);
+      }
+    }
+  };
+
   const handleApproveCashierOrder = async (order: OrderDocument) => {
     if (!order.id) return;
     try {
       const orderDocRef = doc(db, 'orders', order.id);
-      await updateDoc(orderDocRef, {
-        status: 'pending',
-        kitchenEnteredAt: new Date().toISOString()
-      });
+      const isTableCheckout = order.orderType === 'dine_in_table';
+
+      const updates: any = {
+        status: isTableCheckout ? 'completed' : 'pending'
+      };
+
+      if (!isTableCheckout) {
+        updates.kitchenEnteredAt = new Date().toISOString();
+      } else {
+        updates.updatedAt = new Date().toISOString();
+      }
+
+      await updateDoc(orderDocRef, updates);
 
       await addDoc(collection(db, 'transactions'), {
         orderId: order.id,
@@ -170,7 +207,13 @@ export const TableMap = () => {
         createdAt: new Date().toISOString()
       });
 
-      alert('Baixa do pedido aprovada com sucesso! O pedido foi enviado para a cozinha.');
+      if (isTableCheckout) {
+        await checkAndFreeTable(order.tableNumber, order.id);
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+        alert('Baixa do fechamento de mesa aprovada com sucesso! O pedido foi finalizado.');
+      } else {
+        alert('Baixa do pedido aprovada com sucesso! O pedido foi enviado para a cozinha.');
+      }
     } catch (err) {
       console.error('Erro ao aprovar baixa do caixa:', err);
       alert('Erro ao aprovar baixa do caixa. Tente novamente.');

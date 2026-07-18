@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { ChefHat, CreditCard, Bell, Play, Check, Navigation } from 'lucide-react';
+import { ChefHat, CreditCard, Bell, Play, Check, Navigation, TrendingUp, DollarSign, Clock } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc, getDocs, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { processOrderLoyaltyStamps } from '../../utils/loyalty';
@@ -33,14 +33,28 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const [reprovingOrderId, setReprovingOrderId] = useState<string | null>(null);
   const [reprovingOrderSeq, setReprovingOrderSeq] = useState<number | null>(null);
 
+  const [selectedCheckoutTable, setSelectedCheckoutTable] = useState<string | null>(null);
+  const [selectedCheckoutOrder, setSelectedCheckoutOrder] = useState<OrderDocument | null>(null);
+  const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<string>('dinheiro');
+  const [checkoutChangeFor, setCheckoutChangeFor] = useState<string>('');
+
   const handleApproveCashierOrder = async (order: OrderDocument) => {
     if (!order.id) return;
     try {
       const orderDocRef = doc(db, 'orders', order.id);
-      await updateDoc(orderDocRef, {
-        status: 'pending',
-        kitchenEnteredAt: new Date().toISOString()
-      });
+      const isTableCheckout = order.orderType === 'dine_in_table';
+
+      const updates: any = {
+        status: isTableCheckout ? 'completed' : 'pending'
+      };
+
+      if (!isTableCheckout) {
+        updates.kitchenEnteredAt = new Date().toISOString();
+      } else {
+        updates.updatedAt = new Date().toISOString();
+      }
+
+      await updateDoc(orderDocRef, updates);
 
       await addDoc(collection(db, 'transactions'), {
         orderId: order.id,
@@ -53,7 +67,13 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
         createdAt: new Date().toISOString()
       });
 
-      alert('Baixa do pedido aprovada com sucesso! O pedido foi enviado para a cozinha.');
+      if (isTableCheckout) {
+        await checkAndFreeTable(order.tableNumber, order.id);
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed' });
+        alert('Baixa do fechamento de mesa aprovada com sucesso! O pedido foi finalizado.');
+      } else {
+        alert('Baixa do pedido aprovada com sucesso! O pedido foi enviado para a cozinha.');
+      }
     } catch (err) {
       console.error('Erro ao aprovar baixa do caixa:', err);
       alert('Erro ao aprovar baixa do caixa. Tente novamente.');
@@ -75,6 +95,79 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     } catch (err) {
       console.error('Erro ao reprovar pedido no caixa:', err);
       alert('Erro ao reprovar pedido. Tente novamente.');
+    }
+  };
+
+  const handleManualTableCheckout = async (tableNum: string, tableOrdersList: OrderDocument[]) => {
+    try {
+      const batchPromises = tableOrdersList.map(async (order) => {
+        if (!order.id) return;
+        const orderDocRef = doc(db, 'orders', order.id);
+        
+        await updateDoc(orderDocRef, {
+          status: 'completed',
+          paymentMethod: checkoutPaymentMethod,
+          changeFor: checkoutPaymentMethod === 'dinheiro' && checkoutChangeFor ? parseFloat(checkoutChangeFor.replace(',', '.')) : null,
+          updatedAt: new Date().toISOString()
+        });
+
+        await addDoc(collection(db, 'transactions'), {
+          orderId: order.id,
+          clientName: order.clientName,
+          clientUid: order.clientUid,
+          total: order.total,
+          paymentMethod: checkoutPaymentMethod,
+          type: 'baixa_manual',
+          approvedBy: userData?.name || userData?.email || 'Caixa',
+          createdAt: new Date().toISOString()
+        });
+
+        await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed', paymentMethod: checkoutPaymentMethod });
+      });
+
+      await Promise.all(batchPromises);
+      await checkAndFreeTable(tableNum, undefined);
+      
+      alert(`Mesa ${tableNum} encerrada e paga com sucesso!`);
+      setSelectedCheckoutTable(null);
+      setCheckoutChangeFor('');
+    } catch (err) {
+      console.error("Erro ao encerrar mesa manualmente:", err);
+      alert("Erro ao encerrar mesa. Tente novamente.");
+    }
+  };
+
+  const handleManualOrderCheckout = async (order: OrderDocument) => {
+    if (!order.id) return;
+    try {
+      const orderDocRef = doc(db, 'orders', order.id);
+      
+      await updateDoc(orderDocRef, {
+        status: 'completed',
+        paymentMethod: checkoutPaymentMethod,
+        changeFor: checkoutPaymentMethod === 'dinheiro' && checkoutChangeFor ? parseFloat(checkoutChangeFor.replace(',', '.')) : null,
+        updatedAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'transactions'), {
+        orderId: order.id,
+        clientName: order.clientName,
+        clientUid: order.clientUid,
+        total: order.total,
+        paymentMethod: checkoutPaymentMethod,
+        type: 'baixa_manual',
+        approvedBy: userData?.name || userData?.email || 'Caixa',
+        createdAt: new Date().toISOString()
+      });
+
+      await processOrderLoyaltyStamps(order.id, { ...order, status: 'completed', paymentMethod: checkoutPaymentMethod });
+      
+      alert(`Pedido finalizado e pago com sucesso!`);
+      setSelectedCheckoutOrder(null);
+      setCheckoutChangeFor('');
+    } catch (err) {
+      console.error("Erro ao finalizar pedido manualmente:", err);
+      alert("Erro ao finalizar pedido. Tente novamente.");
     }
   };
 
@@ -492,186 +585,423 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
           )}
 
           {/* Fila do Caixa */}
-          {filter === 'cashier' && isAuthorized('cashier') && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
-              
-              {/* Seção 1: Aguardando Avaliação no Caixa */}
-              <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-                <div className="section-title">
-                  <CreditCard className="section-icon text-emerald" size={24} />
-                  <h3 style={{ fontSize: '1.4rem' }}>Aguardando Avaliação no Caixa ({cashierEvaluationOrders.length} pendentes)</h3>
-                </div>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
-                  Pedidos com pagamento físico (dinheiro ou cartão na entrega/retirada) que aguardam baixa manual.
-                </p>
-                <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
-                  {cashierEvaluationOrders.length === 0 ? (
-                    <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                      Nenhum pedido aguardando avaliação no momento.
-                    </p>
-                  ) : (
-                    cashierEvaluationOrders.map((order) => (
-                      <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
-                        <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
-                            <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
-                              R$ {order.total.toFixed(2).replace('.', ',')}
+          {filter === 'cashier' && isAuthorized('cashier') && (() => {
+            const todayStr = getBusinessDay(new Date().toISOString());
+            const todayOrders = orders.filter(o => getBusinessDay(o.createdAt) === todayStr && o.status !== 'cancelled');
+
+            // Pedidos pagos de hoje (tanto finalizados quanto ativos pagos online)
+            const paidTodayOrders = todayOrders.filter(o => 
+              o.status === 'completed' || 
+              ['pix', 'credito', 'google_pay'].includes(o.paymentMethod || '')
+            );
+            const totalPaidTodayValue = paidTodayOrders.reduce((sum, o) => sum + o.total, 0);
+
+            // Pedidos não pagos de hoje (ativos com métodos físicos ou pagar no final)
+            const unpaidTodayOrders = todayOrders.filter(o => 
+              o.status !== 'completed' && 
+              !['pix', 'credito', 'google_pay'].includes(o.paymentMethod || '')
+            );
+            const totalUnpaidTodayValue = unpaidTodayOrders.reduce((sum, o) => sum + o.total, 0);
+            
+            // Total Geral de hoje (Vendas realizadas = Pagas + Pendentes)
+            const totalRealizedTodayValue = totalPaidTodayValue + totalUnpaidTodayValue;
+
+            // Agrupamento de mesas não pagas
+            const unpaidTablesMap: { [table: string]: { total: number; count: number; clientNames: string[] } } = {};
+            unpaidTodayOrders.forEach(o => {
+              if (o.orderType === 'dine_in_table' && o.tableNumber) {
+                if (!unpaidTablesMap[o.tableNumber]) {
+                  unpaidTablesMap[o.tableNumber] = { total: 0, count: 0, clientNames: [] };
+                }
+                unpaidTablesMap[o.tableNumber].total += o.total;
+                unpaidTablesMap[o.tableNumber].count += 1;
+                if (!unpaidTablesMap[o.tableNumber].clientNames.includes(o.clientName)) {
+                  unpaidTablesMap[o.tableNumber].clientNames.push(o.clientName);
+                }
+              }
+            });
+
+            const unpaidOthers = unpaidTodayOrders.filter(o => o.orderType !== 'dine_in_table');
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%' }}>
+                
+                {/* Painel de Resumo Financeiro do Dia */}
+                <div 
+                  className="staff-section cashier-summary animate-fade-in" 
+                  style={{ 
+                    background: 'rgba(255, 255, 255, 0.01)', 
+                    border: '1px solid rgba(255, 255, 255, 0.05)', 
+                    borderRadius: '20px', 
+                    padding: '1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '1.25rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.75rem' }}>
+                    <h3 style={{ fontSize: '1.3rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff' }}>
+                      <TrendingUp size={22} className="text-gold" style={{ color: 'var(--primary-gold)' }} />
+                      Resumo do Caixa (Hoje)
+                    </h3>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Dia de Trabalho: <strong style={{ color: '#fff' }}>{todayStr.split('-').reverse().join('/')}</strong>
+                    </span>
+                  </div>
+
+                  {/* Grid de Cards de Estatísticas */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                    
+                    {/* Card 1: Total Realizado */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '16px', padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary-gold)', flexShrink: 0 }}>
+                        <DollarSign size={22} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block' }}>Pedidos Realizados</span>
+                        <strong style={{ fontSize: '1.35rem', color: '#fff', display: 'block', margin: '2px 0' }}>
+                          R$ {totalRealizedTodayValue.toFixed(2).replace('.', ',')}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          {todayOrders.length} {todayOrders.length === 1 ? 'pedido' : 'pedidos'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Pedidos Pagos */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '16px', padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981', flexShrink: 0 }}>
+                        <Check size={22} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block' }}>Pedidos Pagos</span>
+                        <strong style={{ fontSize: '1.35rem', color: '#10b981', display: 'block', margin: '2px 0' }}>
+                          R$ {totalPaidTodayValue.toFixed(2).replace('.', ',')}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          {paidTodayOrders.length} {paidTodayOrders.length === 1 ? 'pedido' : 'pedidos'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Card 3: Pedidos Não Pagos */}
+                    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '16px', padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', flexShrink: 0 }}>
+                        <Clock size={22} />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block' }}>Pendente (A pagar)</span>
+                        <strong style={{ fontSize: '1.35rem', color: '#ef4444', display: 'block', margin: '2px 0' }}>
+                          R$ {totalUnpaidTodayValue.toFixed(2).replace('.', ',')}
+                        </strong>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          {unpaidTodayOrders.length} {unpaidTodayOrders.length === 1 ? 'pedido' : 'pedidos'}
+                        </span>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Detalhamento de Saldos Não Pagos */}
+                  {totalUnpaidTodayValue > 0 && (
+                    <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', borderRadius: '14px', padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', color: 'var(--primary-gold)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <Clock size={15} /> Detalhamento de Valores Pendentes
+                      </h4>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                        
+                        {/* Sub-painel 1: Mesas (Pagar no Final) */}
+                        <div>
+                          <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' }}>
+                            Mesa Consumo (Pagar no Final)
+                          </span>
+                          {Object.keys(unpaidTablesMap).length === 0 ? (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                              Nenhuma mesa com consumo pendente.
                             </span>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              {Object.entries(unpaidTablesMap).map(([tableNum, data]) => (
+                                <div 
+                                  key={tableNum} 
+                                  onClick={() => setSelectedCheckoutTable(tableNum)}
+                                  style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center', 
+                                    background: 'rgba(255,255,255,0.02)', 
+                                    padding: '0.5rem 0.75rem', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid rgba(255,255,255,0.03)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease-in-out'
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(245,158,11,0.06)';
+                                    e.currentTarget.style.borderColor = 'rgba(245,158,11,0.25)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.03)';
+                                  }}
+                                >
+                                  <div style={{ fontSize: '0.85rem' }}>
+                                    <strong style={{ color: '#fff' }}>Mesa {tableNum}</strong>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block' }}>
+                                      {data.clientNames.join(', ')} ({data.count} {data.count === 1 ? 'pedido' : 'pedidos'})
+                                    </span>
+                                  </div>
+                                  <strong style={{ color: 'var(--primary-gold)', fontSize: '0.9rem' }}>
+                                    R$ {data.total.toFixed(2).replace('.', ',')}
+                                  </strong>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sub-painel 2: Outros Pedidos (Balcão, Retirada, Entrega) */}
+                        <div>
+                          <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' }}>
+                            Outros Pedidos Pendentes
+                          </span>
+                          {unpaidOthers.length === 0 ? (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                              Nenhum outro pedido pendente.
+                            </span>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                              {unpaidOthers.map((order) => {
+                                const seqNum = order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt);
+                                return (
+                                  <div 
+                                    key={order.id} 
+                                    onClick={() => setSelectedCheckoutOrder(order)}
+                                    style={{ 
+                                      display: 'flex', 
+                                      justifyContent: 'space-between', 
+                                      alignItems: 'center', 
+                                      background: 'rgba(255,255,255,0.02)', 
+                                      padding: '0.5rem 0.75rem', 
+                                      borderRadius: '8px', 
+                                      border: '1px solid rgba(255,255,255,0.03)',
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease-in-out'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = 'rgba(245,158,11,0.06)';
+                                      e.currentTarget.style.borderColor = 'rgba(245,158,11,0.25)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.03)';
+                                    }}
+                                  >
+                                    <div style={{ fontSize: '0.85rem' }}>
+                                      <strong style={{ color: '#fff' }}>Ped. #{seqNum}</strong>
+                                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', display: 'block' }}>
+                                        {order.clientName} • {getOrderTypeLabel(order)}
+                                      </span>
+                                    </div>
+                                    <div style={{ textAlign: 'right' }}>
+                                      <strong style={{ color: '#fff', fontSize: '0.9rem', display: 'block' }}>
+                                        R$ {order.total.toFixed(2).replace('.', ',')}
+                                      </strong>
+                                      <span style={{ fontSize: '0.7rem', color: 'var(--primary-gold)' }}>
+                                        {order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'debito' ? '💳 Débito' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : '💴 Outro'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Seção 1: Aguardando Avaliação no Caixa */}
+                <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+                  <div className="section-title">
+                    <CreditCard className="section-icon text-emerald" size={24} />
+                    <h3 style={{ fontSize: '1.4rem' }}>Aguardando Avaliação no Caixa ({cashierEvaluationOrders.length} pendentes)</h3>
+                  </div>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
+                    Pedidos com pagamento físico (dinheiro ou cartão na entrega/retirada) que aguardam baixa manual.
+                  </p>
+                  <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                    {cashierEvaluationOrders.length === 0 ? (
+                      <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                        Nenhum pedido aguardando avaliação no momento.
+                      </p>
+                    ) : (
+                      cashierEvaluationOrders.map((order) => (
+                        <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                          <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                              <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
+                              <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
+                                R$ {order.total.toFixed(2).replace('.', ',')}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                              <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
+                              {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                              <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
+                              <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : order.paymentMethod === 'debito' ? '💳 Débito' : order.paymentMethod === 'debito_point' ? '💴 Débito Maquininha' : order.paymentMethod === 'credito_point' ? '💳 Crédito Maquininha' : '💴 Cartão (maquininha)'}</strong></div>
+                              {order.paymentMethod === 'dinheiro' && order.changeFor && (
+                                <div style={{ color: '#ef4444' }}>Troco para: <strong>R$ {order.changeFor.toFixed(2).replace('.', ',')}</strong> (Troco: R$ {(order.changeFor - order.total).toFixed(2).replace('.', ',')})</div>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                            <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
-                            {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
-                            <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
-                             <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : '💴 Cartão (maquininha)'}</strong></div>
-                            {order.paymentMethod === 'dinheiro' && order.changeFor && (
-                              <div style={{ color: '#ef4444' }}>Troco para: <strong>R$ {order.changeFor.toFixed(2).replace('.', ',')}</strong> (Troco: R$ {(order.changeFor - order.total).toFixed(2).replace('.', ',')})</div>
+                          <div style={{ margin: '0.75rem 0', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.5rem' }}>
+                            {order.items.map((item, index) => (
+                              <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
+                            ))}
+                            {(order.deliveryFee ?? 0) > 0 && (
+                              <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
+                                🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
+                              </p>
+                            )}
+                            {(order.serviceFee ?? 0) > 0 && (
+                              <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
+                                🪑 Taxa de Serviço (10%): R$ {(order.serviceFee ?? 0).toFixed(2).replace('.', ',')}
+                              </p>
+                            )}
+                            {order.orderType === 'dine_in_table' && (order.serviceFee ?? 0) === 0 && (
+                              <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: '#ef4444', fontStyle: 'italic' }}>
+                                🪑 Taxa de Serviço (10%): Isento/Não cobrado
+                              </p>
+                            )}
+                          </div>
+                          <div className="order-actions" style={{ 
+                            display: 'grid', 
+                            gridTemplateColumns: order.orderType === 'dine_in_table' ? '1fr 1fr 1fr' : '1fr 1fr', 
+                            gap: '0.5rem', 
+                            marginTop: '0.75rem' 
+                          }}>
+                            <button 
+                              type="button" 
+                              onClick={() => handleApproveCashierOrder(order)} 
+                              className="btn-small btn-success" 
+                              style={{ width: '100%', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
+                            >
+                              ✓ Aprovar
+                            </button>
+                            {order.orderType === 'dine_in_table' && (
+                              (order.serviceFee ?? 0) > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleWaiveServiceFee(order)}
+                                  className="btn-small"
+                                  style={{ 
+                                    width: '100%', 
+                                    padding: '0.6rem', 
+                                    background: 'rgba(245, 158, 11, 0.1)', 
+                                    color: 'var(--primary-gold)', 
+                                    border: '1px dashed var(--primary-gold)', 
+                                    borderRadius: '8px', 
+                                    cursor: 'pointer', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    gap: '0.3rem', 
+                                    fontWeight: 700 
+                                  }}
+                                >
+                                  Isentar 10%
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreServiceFee(order)}
+                                  className="btn-small"
+                                  style={{ 
+                                    width: '100%', 
+                                    padding: '0.6rem', 
+                                    background: 'rgba(16, 185, 129, 0.1)', 
+                                    color: '#10b981', 
+                                    border: '1px dashed #10b981', 
+                                    borderRadius: '8px', 
+                                    cursor: 'pointer', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    gap: '0.3rem', 
+                                    fontWeight: 700 
+                                  }}
+                                >
+                                  Cobrar 10%
+                                </button>
+                              )
+                            )}
+                            <button 
+                              type="button" 
+                              onClick={() => { if (order.id) { setReprovingOrderId(order.id); setReprovingOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} 
+                              className="btn-small btn-danger" 
+                              style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
+                            >
+                              ✗ Reprovar
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Seção 2: Fila de Finalização (Pedidos Prontos) */}
+                <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+                  <div className="section-title">
+                    <Bell className="section-icon text-blue" size={24} />
+                    <h3 style={{ fontSize: '1.4rem' }}>Finalização de Pedidos Prontos ({cashierOrders.length} aguardando)</h3>
+                  </div>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
+                    Pedidos finalizados na cozinha que aguardam a confirmação de entrega ao cliente.
+                  </p>
+                  <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                    {cashierOrders.length === 0 ? (
+                      <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                        Nenhum recebimento pendente.
+                      </p>
+                    ) : (
+                      cashierOrders.map((order) => (
+                        <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                          <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                              <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
+                              <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
+                                R$ {order.total.toFixed(2).replace('.', ',')}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                              <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
+                              {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                            </div>
+                          </div>
+                          <div className="order-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
+                            <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
+                              Confirmar Entrega e Finalizar
+                            </button>
+                            {isAuthorizedCancel && (
+                              <button type="button" onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} className="btn-small btn-danger" style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
+                                Cancelar Pedido
+                              </button>
                             )}
                           </div>
                         </div>
-                        <div style={{ margin: '0.75rem 0', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.5rem' }}>
-                          {order.items.map((item, index) => (
-                            <p key={index} style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--text-secondary)' }}>{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
-                          ))}
-                          {(order.deliveryFee ?? 0) > 0 && (
-                            <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
-                              🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
-                            </p>
-                          )}
-                          {(order.serviceFee ?? 0) > 0 && (
-                            <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: 'var(--primary-gold)', fontStyle: 'italic' }}>
-                              🪑 Taxa de Serviço (10%): R$ {(order.serviceFee ?? 0).toFixed(2).replace('.', ',')}
-                            </p>
-                          )}
-                          {order.orderType === 'dine_in_table' && (order.serviceFee ?? 0) === 0 && (
-                            <p style={{ fontSize: '0.9rem', margin: '0.2rem 0', color: '#ef4444', fontStyle: 'italic' }}>
-                              🪑 Taxa de Serviço (10%): Isento/Não cobrado
-                            </p>
-                          )}
-                        </div>
-                        <div className="order-actions" style={{ 
-                          display: 'grid', 
-                          gridTemplateColumns: order.orderType === 'dine_in_table' ? '1fr 1fr 1fr' : '1fr 1fr', 
-                          gap: '0.5rem', 
-                          marginTop: '0.75rem' 
-                        }}>
-                          <button 
-                            type="button" 
-                            onClick={() => handleApproveCashierOrder(order)} 
-                            className="btn-small btn-success" 
-                            style={{ width: '100%', padding: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
-                          >
-                            ✓ Aprovar
-                          </button>
-                          {order.orderType === 'dine_in_table' && (
-                            (order.serviceFee ?? 0) > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => handleWaiveServiceFee(order)}
-                                className="btn-small"
-                                style={{ 
-                                  width: '100%', 
-                                  padding: '0.6rem', 
-                                  background: 'rgba(245, 158, 11, 0.1)', 
-                                  color: 'var(--primary-gold)', 
-                                  border: '1px dashed var(--primary-gold)', 
-                                  borderRadius: '8px', 
-                                  cursor: 'pointer', 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  justifyContent: 'center', 
-                                  gap: '0.3rem', 
-                                  fontWeight: 700 
-                                }}
-                              >
-                                Isentar 10%
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleRestoreServiceFee(order)}
-                                className="btn-small"
-                                style={{ 
-                                  width: '100%', 
-                                  padding: '0.6rem', 
-                                  background: 'rgba(16, 185, 129, 0.1)', 
-                                  color: '#10b981', 
-                                  border: '1px dashed #10b981', 
-                                  borderRadius: '8px', 
-                                  cursor: 'pointer', 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  justifyContent: 'center', 
-                                  gap: '0.3rem', 
-                                  fontWeight: 700 
-                                }}
-                              >
-                                Cobrar 10%
-                              </button>
-                            )
-                          )}
-                          <button 
-                            type="button" 
-                            onClick={() => { if (order.id) { setReprovingOrderId(order.id); setReprovingOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} 
-                            className="btn-small btn-danger" 
-                            style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem', fontWeight: 700 }}
-                          >
-                            ✗ Reprovar
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Seção 2: Fila de Finalização (Pedidos Prontos) */}
-              <div className="staff-section cashier-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-                <div className="section-title">
-                  <Bell className="section-icon text-blue" size={24} />
-                  <h3 style={{ fontSize: '1.4rem' }}>Finalização de Pedidos Prontos ({cashierOrders.length} aguardando)</h3>
-                </div>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
-                  Pedidos finalizados na cozinha que aguardam a confirmação de entrega ao cliente.
-                </p>
-                <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
-                  {cashierOrders.length === 0 ? (
-                    <p style={{ color: 'var(--text-secondary)', padding: '1.5rem', gridColumn: '1 / -1', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-                      Nenhum recebimento pendente.
-                    </p>
-                  ) : (
-                    cashierOrders.map((order) => (
-                      <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
-                        <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
-                            <span style={{ fontWeight: 700, color: 'var(--primary-gold)', fontSize: '1.1rem' }}>
-                              R$ {order.total.toFixed(2).replace('.', ',')}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                            <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
-                            {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
-                          </div>
-                        </div>
-                        <div className="order-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
-                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'completed')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
-                            Confirmar Entrega e Finalizar
-                          </button>
-                          {isAuthorizedCancel && (
-                            <button type="button" onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }} className="btn-small btn-danger" style={{ width: '100%', padding: '0.6rem', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
-                              Cancelar Pedido
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
               </div>
-
-            </div>
-          )}
+            );
+          })()}
 
           {/* Fila de Entregas */}
           {filter === 'delivery' && isAuthorized('delivery') && (
@@ -956,6 +1286,315 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
           </div>
         </div>
       )}
+
+      {/* Lightbox de Fechamento de Mesa Manual */}
+      {selectedCheckoutTable && (() => {
+        // Filtrar pedidos pendentes desta mesa
+        const todayStr = getBusinessDay(new Date().toISOString());
+        const tableUnpaidOrders = orders.filter(o => 
+          getBusinessDay(o.createdAt) === todayStr &&
+          o.status !== 'completed' &&
+          o.status !== 'cancelled' &&
+          o.orderType === 'dine_in_table' &&
+          o.tableNumber === selectedCheckoutTable &&
+          !['pix', 'credito', 'google_pay'].includes(o.paymentMethod || '')
+        );
+
+        const tableTotal = tableUnpaidOrders.reduce((sum, o) => sum + o.total, 0);
+
+        return (
+          <div
+            className="lightbox-overlay animate-fade-in"
+            onClick={() => { setSelectedCheckoutTable(null); setCheckoutChangeFor(''); }}
+            style={{ zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '24px',
+                padding: '2rem',
+                width: '90%',
+                maxWidth: '520px',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+                color: '#fff'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.75rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🍽️ Fechar Conta - Mesa {selectedCheckoutTable}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCheckoutTable(null); setCheckoutChangeFor(''); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.25rem' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Lista de Consumo */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '12px' }}>
+                {tableUnpaidOrders.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0, textAlign: 'center' }}>Nenhum item pendente.</p>
+                ) : (
+                  tableUnpaidOrders.map((order) => {
+                    const seqNum = order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt);
+                    return (
+                      <div key={order.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '0.5rem', marginBottom: '0.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                          <span style={{ color: 'var(--primary-gold)' }}>Pedido #{seqNum}</span>
+                          <span>R$ {order.total.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', paddingLeft: '0.5rem' }}>
+                          {order.items.map((item, idx) => (
+                            <div key={idx}>{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</div>
+                          ))}
+                          {(order.serviceFee ?? 0) > 0 && (
+                            <div style={{ fontStyle: 'italic', color: 'var(--primary-gold)' }}>🪑 Taxa de Serviço (10%): R$ {order.serviceFee?.toFixed(2).replace('.', ',')}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Totalizador */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(245,158,11,0.05)', border: '1px dashed var(--primary-gold)', borderRadius: '12px', padding: '0.85rem' }}>
+                <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Total Consumido Pendente:</span>
+                <strong style={{ fontSize: '1.3rem', color: 'var(--primary-gold)' }}>R$ {tableTotal.toFixed(2).replace('.', ',')}</strong>
+              </div>
+
+              {/* Opções de Pagamento */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>Forma de Recebimento</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.4rem' }}>
+                    {[
+                      ['dinheiro', '💵 Dinheiro'],
+                      ['debito', '💳 Débito'],
+                      ['credito', '💳 Crédito'],
+                      ['debito_point', '💴 Maq. Débito'],
+                      ['credito_point', '💳 Maq. Crédito'],
+                      ['pix', '🟡 Pix Manual']
+                    ].map(([method, label]) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => {
+                          setCheckoutPaymentMethod(method);
+                          if (method !== 'dinheiro') setCheckoutChangeFor('');
+                        }}
+                        style={{
+                          padding: '0.5rem',
+                          borderRadius: '8px',
+                          border: checkoutPaymentMethod === method ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.1)',
+                          background: checkoutPaymentMethod === method ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.02)',
+                          color: checkoutPaymentMethod === method ? 'var(--primary-gold)' : '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {checkoutPaymentMethod === 'dinheiro' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Valor Pago pelo Cliente (Troco para):</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: R$ 50,00"
+                      value={checkoutChangeFor}
+                      onChange={(e) => setCheckoutChangeFor(e.target.value.replace(/\D/g, ''))}
+                      style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#0b0f19', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                    {checkoutChangeFor && parseFloat(checkoutChangeFor) > tableTotal && (
+                      <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '2px', fontWeight: 600 }}>
+                        Troco a Devolver: R$ {(parseFloat(checkoutChangeFor) - tableTotal).toFixed(2).replace('.', ',')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Ações */}
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCheckoutTable(null); setCheckoutChangeFor(''); }}
+                  style={{ flex: 1, padding: '0.7rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManualTableCheckout(selectedCheckoutTable, tableUnpaidOrders)}
+                  style={{ flex: 1.5, padding: '0.7rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Encerrar e Fechar Conta
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Lightbox de Fechamento de Pedido Avulso Manual */}
+      {selectedCheckoutOrder && (() => {
+        const order = selectedCheckoutOrder;
+        const seqNum = order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt);
+        
+        return (
+          <div
+            className="lightbox-overlay animate-fade-in"
+            onClick={() => { setSelectedCheckoutOrder(null); setCheckoutChangeFor(''); }}
+            style={{ zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.8)', position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '24px',
+                padding: '2rem',
+                width: '90%',
+                maxWidth: '500px',
+                boxShadow: '0 24px 60px rgba(0,0,0,0.8)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+                color: '#fff'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.75rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  🛍️ Fechar Pedido #{seqNum} ({order.clientName})
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCheckoutOrder(null); setCheckoutChangeFor(''); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.25rem' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Lista de Itens */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '12px', fontSize: '0.85rem' }}>
+                {order.items.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{item.quantity}x {item.name}</span>
+                    <span>R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</span>
+                  </div>
+                ))}
+                {(order.deliveryFee ?? 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontStyle: 'italic', color: 'var(--primary-gold)' }}>
+                    <span>🛵 Taxa de Entrega</span>
+                    <span>R$ {order.deliveryFee?.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                )}
+                {(order.serviceFee ?? 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontStyle: 'italic', color: 'var(--primary-gold)' }}>
+                    <span>🪑 Taxa de Serviço (10%)</span>
+                    <span>R$ {order.serviceFee?.toFixed(2).replace('.', ',')}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Totalizador */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(245,158,11,0.05)', border: '1px dashed var(--primary-gold)', borderRadius: '12px', padding: '0.85rem' }}>
+                <span style={{ fontWeight: 600 }}>Total do Pedido:</span>
+                <strong style={{ fontSize: '1.3rem', color: 'var(--primary-gold)' }}>R$ {order.total.toFixed(2).replace('.', ',')}</strong>
+              </div>
+
+              {/* Opções de Pagamento */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem' }}>Forma de Recebimento</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.4rem' }}>
+                    {[
+                      ['dinheiro', '💵 Dinheiro'],
+                      ['debito', '💳 Débito'],
+                      ['credito', '💳 Crédito'],
+                      ['debito_point', '💴 Maq. Débito'],
+                      ['credito_point', '💳 Maq. Crédito'],
+                      ['pix', '🟡 Pix Manual']
+                    ].map(([method, label]) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => {
+                          setCheckoutPaymentMethod(method);
+                          if (method !== 'dinheiro') setCheckoutChangeFor('');
+                        }}
+                        style={{
+                          padding: '0.5rem',
+                          borderRadius: '8px',
+                          border: checkoutPaymentMethod === method ? '2px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.1)',
+                          background: checkoutPaymentMethod === method ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.02)',
+                          color: checkoutPaymentMethod === method ? 'var(--primary-gold)' : '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {checkoutPaymentMethod === 'dinheiro' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Valor Pago pelo Cliente (Troco para):</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: R$ 50,00"
+                      value={checkoutChangeFor}
+                      onChange={(e) => setCheckoutChangeFor(e.target.value.replace(/\D/g, ''))}
+                      style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: '#0b0f19', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                    {checkoutChangeFor && parseFloat(checkoutChangeFor) > order.total && (
+                      <div style={{ fontSize: '0.8rem', color: '#10b981', marginTop: '2px', fontWeight: 600 }}>
+                        Troco a Devolver: R$ {(parseFloat(checkoutChangeFor) - order.total).toFixed(2).replace('.', ',')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Ações */}
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCheckoutOrder(null); setCheckoutChangeFor(''); }}
+                  style={{ flex: 1, padding: '0.7rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManualOrderCheckout(order)}
+                  style={{ flex: 1.5, padding: '0.7rem', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Registrar Pagamento
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
