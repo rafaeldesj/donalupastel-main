@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { User, Store, Shield, CreditCard, Save, Trash2, Clock, MapPin, AlertCircle, History, FileText, KeyRound, Plus, Camera, QrCode } from 'lucide-react';
+import { User, Store, Shield, CreditCard, Save, Trash2, Clock, MapPin, AlertCircle, History, FileText, KeyRound, Plus, Camera, QrCode, Wallet } from 'lucide-react';
 import { logAuditAction } from '../utils/audit';
 import { SecurityCameraSettings } from '../components/SecurityCameraSettings';
 import { TableQrCodeGenerator } from '../components/TableQrCodeGenerator';
@@ -26,13 +26,14 @@ interface StoreConfig {
   pointPro3Id?: string;
   pointAir2Id?: string;
   pointMiniNfc2Id?: string;
+  disabledPaymentMethods?: string[];
 }
 
 export const SettingsPage = () => {
   const { user, userData, updatePhoneNumber } = useAuth();
   
-  // Tabs state: 'profile' (all) | 'store' (admin) | 'loyalty' (admin) | 'advanced' (dev) | 'audit_logs' (admin) | 'commissions' | 'security'
-  const [activeTab, setActiveTab] = useState<'profile' | 'store' | 'loyalty' | 'advanced' | 'audit_logs' | 'commissions' | 'security' | 'mesas' | 'point_guide'>('profile');
+  // Tabs state: 'profile' (all) | 'store' (admin) | 'loyalty' (admin) | 'advanced' (dev) | 'audit_logs' (admin) | 'commissions' | 'security' | 'payments'
+  const [activeTab, setActiveTab] = useState<'profile' | 'store' | 'loyalty' | 'advanced' | 'audit_logs' | 'commissions' | 'security' | 'mesas' | 'point_guide' | 'payments'>('profile');
   
   const role = userData?.role || 'client';
   const isAdmin = ['developer', 'owner', 'manager'].includes(role);
@@ -247,6 +248,38 @@ export const SettingsPage = () => {
       showFeedback('error', 'Erro ao salvar configurações do Mercado Pago.');
     } finally {
       setSubmittingDevMP(false);
+    }
+  };
+
+  const [submittingPayments, setSubmittingPayments] = useState(false);
+
+  const handleSavePaymentsConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !user) return;
+    setSubmittingPayments(true);
+
+    try {
+      const docRef = doc(db, 'settings', 'store_config');
+      console.log("Salvando formas de pagamento desativadas no Firestore:", storeConfig.disabledPaymentMethods || []);
+      await updateDoc(docRef, {
+        disabledPaymentMethods: storeConfig.disabledPaymentMethods || []
+      });
+
+      await logAuditAction({
+        userId: user.uid,
+        userEmail: user.email || '',
+        userName: userData?.name || user.displayName || 'Administrador',
+        actionType: 'UPDATE_PAYMENTS_CONFIG',
+        title: 'Formas de Pagamento Atualizadas',
+        description: `O administrador atualizou as formas de pagamento desativadas: ${(storeConfig.disabledPaymentMethods || []).join(', ') || 'Nenhuma (todas ativas)'}.`
+      });
+
+      showFeedback('success', 'Formas de pagamento atualizadas com sucesso!');
+    } catch (err) {
+      console.error(err);
+      showFeedback('error', 'Erro ao salvar formas de pagamento.');
+    } finally {
+      setSubmittingPayments(false);
     }
   };
 
@@ -756,6 +789,31 @@ export const SettingsPage = () => {
               <span>📟 Guia Maquininha</span>
             </button>
           )}
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('payments')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                borderRadius: '12px',
+                border: activeTab === 'payments' ? '1px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.05)',
+                background: activeTab === 'payments' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)',
+                color: activeTab === 'payments' ? 'var(--primary-gold)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                transition: 'all 0.2s',
+                textAlign: 'left'
+              }}
+            >
+              <Wallet size={16} style={{ color: '#f59e0b' }} />
+              <span>Formas de Pagamento</span>
+            </button>
+          )}
         </aside>
 
         {/* Formulários de Configurações */}
@@ -764,6 +822,113 @@ export const SettingsPage = () => {
           {/* Aba Mesas & QR Codes */}
           {activeTab === 'mesas' && isAdmin && (
             <TableQrCodeGenerator />
+          )}
+
+          {/* Aba Formas de Pagamento */}
+          {activeTab === 'payments' && isAdmin && (
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <Wallet size={20} style={{ color: 'var(--primary-gold)' }} />
+                <h3 style={{ fontSize: '1.25rem', margin: 0, fontWeight: 700 }}>Gerenciar Formas de Pagamento</h3>
+              </div>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.4' }}>
+                Ative ou desative as formas de pagamento disponíveis para os clientes no cardápio digital, checkout e no fechamento de conta. Métodos desativados serão ocultados das opções de escolha do cliente.
+              </p>
+
+              <form onSubmit={handleSavePaymentsConfig}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
+                  {[
+                    { id: 'pix', name: 'Pix', desc: 'Pagamento instantâneo via QR Code gerado no Mercado Pago.', label: 'Pix 🟡' },
+                    { id: 'credito', name: 'Crédito Online', desc: 'Pagamento via cartão de crédito online no checkout.', label: 'Crédito Online 💳' },
+                    { id: 'google_pay', name: 'Google Pay', desc: 'Carteira digital rápida integrada.', label: 'Google Pay 📱' },
+                    { id: 'debito_point', name: 'Débito Maquininha', desc: 'Débito presencial via maquininha Point.', label: 'Débito Maquininha 💴' },
+                    { id: 'credito_point', name: 'Crédito Maquininha', desc: 'Crédito presencial via maquininha Point.', label: 'Crédito Maquininha 💳' },
+                    { id: 'dinheiro', name: 'Dinheiro', desc: 'Pagamento em dinheiro vivo.', label: 'Dinheiro 💵' },
+                    { id: 'pagar_final', name: 'Pagar no Final', desc: 'Permitir que o cliente pague ao final do atendimento na mesa.', label: 'Pagar no Final 🍽️' }
+                  ].map((method) => {
+                    const isDisabled = (storeConfig?.disabledPaymentMethods || []).includes(method.id);
+                    return (
+                      <div 
+                        key={method.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '1rem',
+                          background: 'rgba(255,255,255,0.01)',
+                          border: '1px solid rgba(255,255,255,0.04)',
+                          borderRadius: '12px',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.95rem', color: isDisabled ? 'var(--text-secondary)' : '#fff' }}>
+                            {method.label}
+                          </span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            {method.desc}
+                          </span>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const disabledList = storeConfig?.disabledPaymentMethods || [];
+                            let newList: string[];
+                            if (isDisabled) {
+                              newList = disabledList.filter(id => id !== method.id);
+                            } else {
+                              newList = [...disabledList, method.id];
+                            }
+                            setStoreConfig(prev => prev ? { ...prev, disabledPaymentMethods: newList } : prev);
+                          }}
+                          style={{
+                            background: isDisabled ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            border: isDisabled ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                            color: isDisabled ? '#ef4444' : '#10b981',
+                            padding: '0.4rem 1rem',
+                            borderRadius: '20px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            minWidth: '80px',
+                            textAlign: 'center'
+                          }}
+                        >
+                          {isDisabled ? 'Ocultado' : 'Ativo'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingPayments}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    background: 'var(--primary-gold)',
+                    color: '#0b0f19',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s',
+                    width: '200px'
+                  }}
+                >
+                  <Save size={16} />
+                  {submittingPayments ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </form>
+            </div>
           )}
 
           {/* Aba Guia Maquininha Point */}

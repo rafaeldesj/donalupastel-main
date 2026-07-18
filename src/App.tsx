@@ -119,7 +119,7 @@ const MainLayout = () => {
     setTimeout(() => {
       const element = document.getElementById('cart-section');
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 120);
   };

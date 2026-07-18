@@ -1347,7 +1347,7 @@ body {
     font-size: 1rem !important;
   }
   .cart-items-list {
-    max-height: 180px !important;
+    max-height: none !important;
     gap: 0.35rem !important;
   }
   .loyalty-card button {
@@ -2058,11 +2058,31 @@ select:focus {
   background: rgba(245, 158, 11, 0.1);
   border-color: rgba(245, 158, 11, 0.3);
   color: var(--primary-gold);
+  animation: cart-pulse-glow 1.8s infinite ease-in-out;
 }
 
 .header-cart-btn.has-items:hover {
   background: rgba(245, 158, 11, 0.18);
   border-color: rgba(245, 158, 11, 0.5);
+}
+
+@keyframes cart-pulse-glow {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 5px rgba(245, 158, 11, 0.4), inset 0 0 5px rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.9), 0 0 10px rgba(245, 158, 11, 0.6), inset 0 0 10px rgba(245, 158, 11, 0.4);
+    border-color: rgba(245, 158, 11, 0.9);
+    background-color: rgba(245, 158, 11, 0.25);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 5px rgba(245, 158, 11, 0.4), inset 0 0 5px rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
 }
 
 .cart-count-badge {
@@ -2584,4 +2604,21 @@ select:focus {
 @media (max-width: 600px) {
   .guide-img  { width: 100%; max-width: 100%; }
   .guide-img-sm { width: 90%; max-width: 90%; }
+}
+
+/* Custom mobile adjustments for brand store status indicator */
+@media (max-width: 768px) {
+  .header-brand {
+    gap: 0.4rem !important;
+  }
+  .store-status-text {
+    display: none !important;
+  }
+  .store-status-container {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin-left: -0.15rem !important;
+    box-shadow: none !important;
+  }
 }

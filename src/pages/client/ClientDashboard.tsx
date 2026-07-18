@@ -296,17 +296,39 @@ export const ClientDashboard = ({
   const [billPixPaymentStatus, setBillPixPaymentStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
 
   useEffect(() => {
-    const fetchStoreConfig = async () => {
-      try {
-        const docSnap = await getDoc(doc(db, 'settings', 'store_config'));
-        if (docSnap.exists()) {
-          setStoreConfig(docSnap.data());
-        }
-      } catch (err) {
-        console.error('Erro ao buscar store_config:', err);
+    const docRef = doc(db, 'settings', 'store_config');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("Cardápio - Configurações carregadas em tempo real do Firestore:", data);
+        setStoreConfig(data);
+
+        const disabled = data.disabledPaymentMethods || [];
+        
+        // Reset dynamic paymentMethod if selected method is disabled
+        setPaymentMethod(current => {
+          if (disabled.includes(current)) {
+            const allMethods = ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'pagar_final', 'dinheiro'];
+            const firstEnabled = allMethods.find(m => !disabled.includes(m)) as any;
+            return firstEnabled || current;
+          }
+          return current;
+        });
+
+        // Reset dynamic billPaymentMethod if selected method is disabled
+        setBillPaymentMethod(current => {
+          if (disabled.includes(current)) {
+            const allBillMethods = ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'dinheiro'];
+            const firstEnabledBill = allBillMethods.find(m => !disabled.includes(m)) as any;
+            return firstEnabledBill || current;
+          }
+          return current;
+        });
       }
-    };
-    fetchStoreConfig();
+    }, (err) => {
+      console.error('Erro ao escutar store_config no cardápio:', err);
+    });
+    return () => unsubscribe();
   }, []);
 
   // Verifica status do pagamento Pix do fechamento de conta periodicamente
@@ -2730,7 +2752,7 @@ export const ClientDashboard = ({
               <p style={{ color: 'var(--text-secondary)', textAlign: 'center', margin: '2rem 0' }}>Seu carrinho está vazio.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div className="cart-items-list" style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="cart-items-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {cart.map((item, idx) => (
                     <div key={`${item.id}-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3088,24 +3110,27 @@ export const ClientDashboard = ({
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 {(() => {
+                  const disabled = storeConfig?.disabledPaymentMethods || [];
+                  let methods = [];
                   if (orderType === 'dine_in_table') {
-                    return [
+                    methods = [
                       ['pix', 'Pix 🟡'],
                       ['credito', 'Crédito Online 💳'],
                       ['google_pay', 'Google Pay 📱'],
                       ['debito_point', 'Débito Maquininha 💴'],
                       ['credito_point', 'Crédito Maquininha 💳'],
                       ['pagar_final', 'Pagar no Final 🍽️']
-                    ] as any;
+                    ];
+                  } else {
+                    methods = [
+                      ['pix', 'Pix 🟡'],
+                      ['credito', 'Crédito Online 💳'],
+                      ['google_pay', 'Google Pay 📱'],
+                      ['debito_point', 'Débito Maquininha 💴'],
+                      ['credito_point', 'Crédito Maquininha 💳']
+                    ];
                   }
-
-                  return [
-                    ['pix', 'Pix 🟡'],
-                    ['credito', 'Crédito Online 💳'],
-                    ['google_pay', 'Google Pay 📱'],
-                    ['debito_point', 'Débito Maquininha 💴'],
-                    ['credito_point', 'Crédito Maquininha 💳']
-                  ] as any;
+                  return methods.filter(([val]) => !disabled.includes(val)) as any;
                 })().map(([val, label]: [string, string]) => (
                   <button
                     key={val}
@@ -4463,15 +4488,17 @@ export const ClientDashboard = ({
                       <div>
                         <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' }}>Pagar Saldo Devedor Via</span>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
-                          {(() => {
-                            return [
+                           {(() => {
+                            const disabled = storeConfig?.disabledPaymentMethods || [];
+                            const methods = [
                               ['pix', 'Pix 🟡'],
                               ['credito', 'Crédito Online 💳'],
                               ['google_pay', 'Google Pay 📱'],
                               ['debito_point', 'Débito Maquininha 💴'],
                               ['credito_point', 'Crédito Maquininha 💳'],
                               ['dinheiro', 'Dinheiro 💵']
-                            ] as any;
+                            ];
+                            return methods.filter(([val]) => !disabled.includes(val)) as any;
                           })().map(([val, label]: [string, string]) => (
                             <button
                               key={val}
