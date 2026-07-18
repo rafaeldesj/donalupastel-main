@@ -81,6 +81,15 @@ export const UserManagement = () => {
     setPhoneNumber(formatPhone(e.target.value));
   };
 
+  const normalizeEmail = (val: string) => {
+    return val
+      .toLowerCase()
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove acentos e caracteres especiais
+      .replace(/\s+/g, ""); // Remove espaços
+  };
+
   // Estados para redefinição de senha provisória
   const [resetUser, setResetUser] = useState<UserDocument | null>(null);
   const [tempPassword, setTempPassword] = useState('');
@@ -569,7 +578,7 @@ export const UserManagement = () => {
 
             <div className="input-group">
               <label>Endereço de E-mail</label>
-              <input type="email" placeholder="email@donalupastelaria.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ padding: '0.6rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }} />
+              <input type="email" placeholder="email@donalupastelaria.com" value={email} onChange={(e) => setEmail(normalizeEmail(e.target.value))} required style={{ padding: '0.6rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }} />
             </div>
 
             <div className="input-group">

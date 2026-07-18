@@ -51,8 +51,18 @@ export const AuthButton = () => {
     if (clean.length > 0 && !hasLetters && !hasAtSymbol) {
       setEmail(formatPhone(val));
     } else {
-      setEmail(val);
+      // Se contiver @ ou letras, normaliza o e-mail se for um e-mail completo
+      setEmail(val.includes('@') ? normalizeEmail(val) : val.trim());
     }
+  };
+
+  const normalizeEmail = (val: string) => {
+    return val
+      .toLowerCase()
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // Remove acentos e caracteres especiais
+      .replace(/\s+/g, ""); // Remove espaços
   };
 
   const getRoleBadgeStyles = (role: string) => {
