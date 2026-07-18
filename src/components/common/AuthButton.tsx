@@ -51,8 +51,7 @@ export const AuthButton = () => {
     if (clean.length > 0 && !hasLetters && !hasAtSymbol) {
       setEmail(formatPhone(val));
     } else {
-      // Se contiver @ ou letras, normaliza o e-mail se for um e-mail completo
-      setEmail(val.includes('@') ? normalizeEmail(val) : val.trim());
+      setEmail(val);
     }
   };
 
@@ -138,10 +137,11 @@ export const AuthButton = () => {
 
     setActionLoading(true);
     try {
+      const targetEmail = email.includes('@') ? normalizeEmail(email) : email.trim();
       if (isRegisterMode) {
-        await registerWithEmail(email, password, name, phone);
+        await registerWithEmail(targetEmail, password, name, phone);
       } else {
-        await loginWithEmail(email, password);
+        await loginWithEmail(targetEmail, password);
       }
     } catch (err: any) {
       console.error(err);
