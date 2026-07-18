@@ -888,7 +888,7 @@ export const SettingsPage = () => {
                           {/* Segmented Control for Theme Selection */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Tema:</span>
-                            <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '2px' }}>
+                            <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '2px' }}>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -903,7 +903,7 @@ export const SettingsPage = () => {
                                   border: 'none',
                                   color: currentTheme === 'light' ? '#0b0f19' : 'var(--text-secondary)',
                                   padding: '0.25rem 0.75rem',
-                                  borderRadius: '6px',
+                                  borderRadius: '18px',
                                   fontSize: '0.75rem',
                                   fontWeight: 700,
                                   cursor: 'pointer',
@@ -926,7 +926,7 @@ export const SettingsPage = () => {
                                   border: 'none',
                                   color: currentTheme === 'dark' ? '#ffffff' : 'var(--text-secondary)',
                                   padding: '0.25rem 0.75rem',
-                                  borderRadius: '6px',
+                                  borderRadius: '18px',
                                   fontSize: '0.75rem',
                                   fontWeight: 700,
                                   cursor: 'pointer',
