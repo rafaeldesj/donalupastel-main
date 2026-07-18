@@ -72,7 +72,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const sessionLoaded = await loadSession();
-      if (sessionLoaded && !isTempSession) return;
+      if (sessionLoaded) {
+        if (!currentUser) {
+          // Se a sessão local carregou com sucesso do localStorage, mas o Firebase Auth
+          // principal está deslogado, preserva a sessão local e não a redefine como nula.
+          return;
+        }
+        if (!isTempSession) {
+          return;
+        }
+      }
 
       setUser(currentUser);
       
