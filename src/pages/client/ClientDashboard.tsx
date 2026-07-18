@@ -282,6 +282,12 @@ export const ClientDashboard = ({
   const [billNoChangeNeeded, setBillNoChangeNeeded] = useState(false);
   const [billSubmitting, setBillSubmitting] = useState(false);
   const [billError, setBillError] = useState<string | null>(null);
+
+  // States para customização de pastel antes de adicionar ao carrinho
+  const [customizingPastel, setCustomizingPastel] = useState<any | null>(null);
+  const [tempWithCatupiry, setTempWithCatupiry] = useState(false);
+  const [tempWithBorda, setTempWithBorda] = useState(false);
+  const [tempIngredients, setTempIngredients] = useState<string[]>([]);
   
   const [showBillPixLightbox, setShowBillPixLightbox] = useState(false);
   const [billPixQrCode, setBillPixQrCode] = useState('');
@@ -1229,6 +1235,16 @@ export const ClientDashboard = ({
       return;
     }
 
+    // Se for pastel (doce ou salgado), abre a janela sobreposta de opcionais/adicionais
+    if (item.category === 'Pastéis Doces' || item.category === 'Pastéis Salgados') {
+      setCustomizingPastel(item);
+      setTempWithCatupiry(false);
+      setTempWithBorda(false);
+      setTempIngredients([]);
+      return;
+    }
+
+    // Caso contrário (como Bebidas), adiciona diretamente ao carrinho sem customização
     setCart((prevCart) => {
       const existing = prevCart.find((i) => i.id === item.id);
       if (existing) {
@@ -1239,7 +1255,7 @@ export const ClientDashboard = ({
         name: item.name, 
         price: item.price, 
         quantity: 1,
-        category: item.category || 'Pastéis Salgados',
+        category: item.category || 'Bebidas',
         withCatupiry: false,
         withBorda: false,
         ingredients: []
@@ -4750,6 +4766,237 @@ export const ClientDashboard = ({
             >
               Voltar
             </button>
+          </div>
+        </div>
+      )}
+
+      {customizingPastel && (
+        <div
+          className="lightbox-overlay animate-fade-in"
+          style={{
+            zIndex: 3000,
+            alignItems: 'center',
+            justifyContent: 'center',
+            display: 'flex',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(5, 5, 8, 0.85)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)'
+          }}
+          onClick={() => setCustomizingPastel(null)}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #16121e 0%, #0d0a11 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.2)',
+              borderRadius: '24px',
+              padding: '1.5rem',
+              width: '90%',
+              maxWidth: '460px',
+              maxHeight: 'min(90vh, 90dvh)',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1.25rem',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+              position: 'relative',
+              color: '#fff'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Cabeçalho */}
+            <div style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.75rem', paddingRight: '1.5rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--primary-gold)' }}>
+                ✨ Customizar {customizingPastel.name}
+              </h3>
+              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                R$ {customizingPastel.price.toFixed(2).replace('.', ',')}
+              </p>
+            </div>
+
+            {/* Fechar */}
+            <button
+              type="button"
+              onClick={() => setCustomizingPastel(null)}
+              style={{
+                position: 'absolute',
+                top: '1.25rem',
+                right: '1.25rem',
+                background: 'rgba(255,255,255,0.05)',
+                border: 'none',
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                transition: 'background 0.2s'
+              }}
+              aria-label="Fechar"
+            >
+              ✕
+            </button>
+
+            {/* Corpo / Opções */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Opcionais para Salgado */}
+              {customizingPastel.category === 'Pastéis Salgados' && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--primary-gold)' }}>Opcionais (Sem custo adicional):</h4>
+                  <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={tempWithCatupiry}
+                        onChange={(e) => setTempWithCatupiry(e.target.checked)}
+                        style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                      Adicionar Catupiry
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={tempWithBorda}
+                        onChange={(e) => setTempWithBorda(e.target.checked)}
+                        style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                      Borda de Queijo
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Opcionais para Doce */}
+              {customizingPastel.category === 'Pastéis Doces' && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--primary-gold)' }}>Opcionais (Sem custo adicional):</h4>
+                  <div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={tempWithBorda}
+                        onChange={(e) => setTempWithBorda(e.target.checked)}
+                        style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                      Borda de Kit-Kat
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Adicionais para Salgados */}
+              {customizingPastel.category === 'Pastéis Salgados' && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.85rem', color: 'var(--primary-gold)' }}>Adicionais (Opcionais):</h4>
+                    <span style={{ fontSize: '0.75rem', color: tempIngredients.length >= 5 ? 'var(--primary-gold)' : 'var(--text-secondary)' }}>
+                      {tempIngredients.length}/5 selecionados
+                    </span>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+                    {['Palmito', 'Alho poró', 'Tomate', 'Cebola', 'Alho torrado', 'Ovo', 'Azeitona verde', 'Azeitona Preta', 'Milho', 'Ervilha', 'Orégano', 'Calabresa', 'Bacon'].map(ing => {
+                      const isChecked = tempIngredients.includes(ing);
+                      const isDisabled = !isChecked && tempIngredients.length >= 5;
+                      
+                      const handleIngredientToggle = () => {
+                        if (isChecked) {
+                          setTempIngredients(prev => prev.filter(i => i !== ing));
+                        } else if (tempIngredients.length < 5) {
+                          setTempIngredients(prev => [...prev, ing]);
+                        }
+                      };
+
+                      return (
+                        <label key={ing} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: isDisabled ? '#4b5563' : '#fff', cursor: isDisabled ? 'not-allowed' : 'pointer', userSelect: 'none', padding: '0.2rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            disabled={isDisabled}
+                            onChange={handleIngredientToggle}
+                            style={{ accentColor: 'var(--primary-gold)', cursor: isDisabled ? 'not-allowed' : 'pointer', width: '14px', height: '14px' }}
+                          />
+                          {ing}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ações */}
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setCustomizingPastel(null)}
+                style={{
+                  flex: 1,
+                  padding: '0.75rem',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '12px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  transition: 'background 0.2s'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCart((prevCart) => {
+                    const existingIdx = prevCart.findIndex(i => 
+                      i.id === customizingPastel.id && 
+                      i.withCatupiry === tempWithCatupiry && 
+                      i.withBorda === tempWithBorda && 
+                      JSON.stringify((i.ingredients || []).slice().sort()) === JSON.stringify(tempIngredients.slice().sort())
+                    );
+                    
+                    if (existingIdx > -1) {
+                      return prevCart.map((item, idx) => idx === existingIdx ? { ...item, quantity: item.quantity + 1 } : item);
+                    }
+                    
+                    return [...prevCart, {
+                      id: customizingPastel.id,
+                      name: customizingPastel.name,
+                      price: customizingPastel.price,
+                      quantity: 1,
+                      category: customizingPastel.category || 'Pastéis Salgados',
+                      withCatupiry: tempWithCatupiry,
+                      withBorda: tempWithBorda,
+                      ingredients: tempIngredients
+                    }];
+                  });
+                  setCustomizingPastel(null);
+                }}
+                style={{
+                  flex: 2,
+                  padding: '0.75rem',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  transition: 'opacity 0.2s',
+                  boxShadow: '0 4px 12px rgba(245,158,11,0.2)'
+                }}
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}
