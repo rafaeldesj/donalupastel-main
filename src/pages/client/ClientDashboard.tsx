@@ -3119,7 +3119,8 @@ export const ClientDashboard = ({
                       ['google_pay', 'Google Pay 📱'],
                       ['debito_point', 'Débito Maquininha 💴'],
                       ['credito_point', 'Crédito Maquininha 💳'],
-                      ['pagar_final', 'Pagar no Final 🍽️']
+                      ['pagar_final', 'Pagar no Final 🍽️'],
+                      ['dinheiro', 'Dinheiro 💵']
                     ];
                   } else {
                     methods = [
@@ -3127,7 +3128,8 @@ export const ClientDashboard = ({
                       ['credito', 'Crédito Online 💳'],
                       ['google_pay', 'Google Pay 📱'],
                       ['debito_point', 'Débito Maquininha 💴'],
-                      ['credito_point', 'Crédito Maquininha 💳']
+                      ['credito_point', 'Crédito Maquininha 💳'],
+                      ['dinheiro', 'Dinheiro 💵']
                     ];
                   }
                   return methods.filter(([val]) => !disabled.includes(val)) as any;
