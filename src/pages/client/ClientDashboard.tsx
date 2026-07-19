@@ -1645,8 +1645,9 @@ export const ClientDashboard = ({
             total: finalTotal,
             deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
             serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
-            status: 'aguardando_caixa',
+            status: storeConfig?.requireCashierApproval !== false ? 'aguardando_caixa' : 'pending',
             createdAt: new Date().toISOString(),
+            ...(storeConfig?.requireCashierApproval === false ? { kitchenEnteredAt: new Date().toISOString() } : {}),
             orderType,
             tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
             paymentMethod: type,
@@ -1975,7 +1976,8 @@ export const ClientDashboard = ({
           if (orderType === 'dine_in_table') {
             finalStatus = 'pending';
           } else {
-            finalStatus = 'aguardando_caixa';
+            const requiresApproval = storeConfig?.requireCashierApproval !== false;
+            finalStatus = requiresApproval ? 'aguardando_caixa' : 'pending';
           }
         } catch (err: any) {
           if (err.statusCode === 'CANCELED') {
@@ -2022,7 +2024,8 @@ export const ClientDashboard = ({
         if (orderType === 'dine_in_table') {
           finalStatus = 'pending';
         } else {
-          finalStatus = 'aguardando_caixa';
+          const requiresApproval = storeConfig?.requireCashierApproval !== false;
+          finalStatus = requiresApproval ? 'aguardando_caixa' : 'pending';
         }
       } else if (paymentMethod === 'credito') {
         // FLUXO DE PAGAMENTO ONLINE DO PAGBANK

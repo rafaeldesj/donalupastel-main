@@ -28,6 +28,7 @@ interface StoreConfig {
   pointMiniNfc2Id?: string;
   disabledPaymentMethods?: string[];
   paymentMethodsThemes?: Record<string, 'light' | 'dark'>;
+  requireCashierApproval?: boolean;
 }
 
 export const SettingsPage = () => {
@@ -131,7 +132,8 @@ export const SettingsPage = () => {
               credito_point: 'dark',
               dinheiro: 'dark',
               pagar_final: 'dark'
-            }
+            },
+            requireCashierApproval: true
           };
           await setDoc(docRef, defaults);
           setStoreConfig(defaults);
@@ -273,7 +275,8 @@ export const SettingsPage = () => {
       console.log("Salvando formas de pagamento desativadas no Firestore:", storeConfig.disabledPaymentMethods || []);
       await updateDoc(docRef, {
         disabledPaymentMethods: storeConfig.disabledPaymentMethods || [],
-        paymentMethodsThemes: storeConfig.paymentMethodsThemes || {}
+        paymentMethodsThemes: storeConfig.paymentMethodsThemes || {},
+        requireCashierApproval: storeConfig.requireCashierApproval !== undefined ? storeConfig.requireCashierApproval : true
       });
 
       await logAuditAction({
@@ -971,6 +974,51 @@ export const SettingsPage = () => {
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Opção de Exigir Aprovação do Caixa para pagamentos físicos */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
+                  padding: '1.25rem',
+                  borderRadius: '12px',
+                  marginBottom: '2rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <input
+                      type="checkbox"
+                      id="require-cashier-approval"
+                      checked={storeConfig?.requireCashierApproval !== false}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setStoreConfig(prev => prev ? { ...prev, requireCashierApproval: val } : prev);
+                      }}
+                      style={{ 
+                        width: '18px', 
+                        height: '18px', 
+                        accentColor: 'var(--primary-gold)', 
+                        cursor: 'pointer' 
+                      }}
+                    />
+                    <label 
+                      htmlFor="require-cashier-approval" 
+                      style={{ 
+                        fontSize: '0.95rem', 
+                        color: '#fff', 
+                        fontWeight: 600,
+                        cursor: 'pointer', 
+                        userSelect: 'none' 
+                      }}
+                    >
+                      Exigir aprovação do Caixa para pagamentos físicos
+                    </label>
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: '1.75rem' }}>
+                    Se ativado, pedidos em dinheiro ou com pagamento presencial via maquininha deverão ser autorizados manualmente pelo operador do Caixa antes de serem enviados para a cozinha. Se desativado, os pedidos irão diretamente para a produção.
+                  </span>
                 </div>
 
                 <button
