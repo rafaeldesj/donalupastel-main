@@ -2011,7 +2011,7 @@ export const ClientDashboard = ({
             amount: finalTotal,
             email: user?.email || 'cliente@email.com',
             name: user?.displayName || user?.email || 'Cliente',
-            cpf: userData?.cpf || '45678912364',
+            cpf: userData?.cpf || '80288053702',
             devPercentage: isStoreOwnerConnected ? (storeConfig?.devPercentage || 0) : 0
           })
         });

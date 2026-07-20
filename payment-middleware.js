@@ -253,7 +253,7 @@ export const createPixMiddleware = async (req, res) => {
           last_name: lastName,
           identification: {
             type: 'CPF',
-            number: (cpf || '').replace(/\D/g, '') || '45678912364'
+            number: (cpf || '').replace(/\D/g, '') || '80288053702'
           }
         }
       };
