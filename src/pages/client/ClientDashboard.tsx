@@ -295,6 +295,9 @@ export const ClientDashboard = ({
   const [billPixPaymentId, setBillPixPaymentId] = useState<number | null>(null);
   const [billPixPaymentStatus, setBillPixPaymentStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
 
+  // ID do pedido salvo no Firestore antes da confirmação do Pix (para garantir rastreabilidade mesmo com extorno)
+  const [pendingPixOrderId, setPendingPixOrderId] = useState<string | null>(null);
+
   useEffect(() => {
     const docRef = doc(db, 'settings', 'store_config');
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -1700,73 +1703,87 @@ export const ClientDashboard = ({
   };
 
   const completeCheckoutAfterPixPayment = async () => {
-    const now = new Date();
-    const businessStart = new Date(now);
-    if (now.getHours() < 6) {
-      businessStart.setDate(now.getDate() - 1);
-    }
-    businessStart.setHours(6, 0, 0, 0);
+    // Se já existe um pedido salvo (criado quando o QR Code foi gerado), apenas atualiza o status
+    if (pendingPixOrderId) {
+      await updateDoc(doc(db, 'orders', pendingPixOrderId), {
+        status: 'pending',
+        kitchenEnteredAt: new Date().toISOString(),
+        mercadoPagoPaymentId: pixPaymentId,
+        updatedAt: new Date().toISOString()
+      });
+      await processOrderLoyaltyStamps(pendingPixOrderId, { status: 'pending', paymentMethod: 'pix' });
+    } else {
+      // Fallback: cria o pedido agora caso não tenha sido criado previamente
+      const now = new Date();
+      const businessStart = new Date(now);
+      if (now.getHours() < 6) {
+        businessStart.setDate(now.getDate() - 1);
+      }
+      businessStart.setHours(6, 0, 0, 0);
 
-    const qDaily = query(
-      collection(db, 'orders'),
-      where('createdAt', '>=', businessStart.toISOString())
-    );
-    const dailySnap = await getDocs(qDaily);
-    const dailySeq = dailySnap.size + 1;
+      const qDaily = query(
+        collection(db, 'orders'),
+        where('createdAt', '>=', businessStart.toISOString())
+      );
+      const dailySnap = await getDocs(qDaily);
+      const dailySeq = dailySnap.size + 1;
 
-    const orderData: any = {
-      clientUid: user?.uid || '',
-      clientName: user?.displayName || user?.email || 'Cliente Anônimo',
-      clientPhone: userData?.phoneNumber || '',
-      usedFidelityRescue: useFidelityRescue && canRescueFidelity,
-      items: cart.map(item => {
-        let customSuffix = '';
-        const details: string[] = [];
-        if (item.category === 'Pastéis Salgados') {
-          if (item.withCatupiry) details.push('Catupiry');
-          if (item.withBorda) details.push('Borda de Queijo');
-          if (item.ingredients && item.ingredients.length > 0) {
-            details.push(`Adicionais: ${item.ingredients.join(', ')}`);
+      const orderData: any = {
+        clientUid: user?.uid || '',
+        clientName: user?.displayName || user?.email || 'Cliente Anônimo',
+        clientPhone: userData?.phoneNumber || '',
+        usedFidelityRescue: useFidelityRescue && canRescueFidelity,
+        items: cart.map(item => {
+          let customSuffix = '';
+          const details: string[] = [];
+          if (item.category === 'Pastéis Salgados') {
+            if (item.withCatupiry) details.push('Catupiry');
+            if (item.withBorda) details.push('Borda de Queijo');
+            if (item.ingredients && item.ingredients.length > 0) {
+              details.push(`Adicionais: ${item.ingredients.join(', ')}`);
+            }
           }
-        }
-        if (item.category === 'Pastéis Doces') {
-          if (item.withBorda) details.push('Borda de Kit-Kat');
-        }
-        if (details.length > 0) {
-          customSuffix = ` (${details.join(' + ')})`;
-        }
-        return {
-          id: item.id,
-          name: `${item.name}${customSuffix}`,
-          price: item.price,
-          quantity: item.quantity,
-          category: item.category
-        };
-      }),
-      total: finalTotal,
-      deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
-      serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
-      status: 'pending',
-      kitchenEnteredAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      orderType,
-      tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
-      paymentMethod: 'pix',
-      mercadoPagoPaymentId: pixPaymentId,
-      dailySeq,
-      address: orderType === 'delivery' ? {
-        street: deliveryAddress!.street,
-        number: deliveryAddress!.number || '',
-        neighborhood: deliveryAddress!.neighborhood || '',
-        city: deliveryAddress!.city || 'Rio de Janeiro',
-        zipCode: deliveryAddress!.zipCode || '',
-        complement: deliveryAddress!.complement || '',
-        lat: deliveryAddress!.lat,
-        lng: deliveryAddress!.lng,
-      } : null,
-    };
+          if (item.category === 'Pastéis Doces') {
+            if (item.withBorda) details.push('Borda de Kit-Kat');
+          }
+          if (details.length > 0) {
+            customSuffix = ` (${details.join(' + ')})`;
+          }
+          return {
+            id: item.id,
+            name: `${item.name}${customSuffix}`,
+            price: item.price,
+            quantity: item.quantity,
+            category: item.category
+          };
+        }),
+        total: finalTotal,
+        deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
+        serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
+        status: 'pending',
+        kitchenEnteredAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        orderType,
+        tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
+        paymentMethod: 'pix',
+        mercadoPagoPaymentId: pixPaymentId,
+        dailySeq,
+        address: orderType === 'delivery' ? {
+          street: deliveryAddress!.street,
+          number: deliveryAddress!.number || '',
+          neighborhood: deliveryAddress!.neighborhood || '',
+          city: deliveryAddress!.city || 'Rio de Janeiro',
+          zipCode: deliveryAddress!.zipCode || '',
+          complement: deliveryAddress!.complement || '',
+          lat: deliveryAddress!.lat,
+          lng: deliveryAddress!.lng,
+        } : null,
+      };
 
-    await addDoc(collection(db, 'orders'), orderData);
+      await addDoc(collection(db, 'orders'), orderData);
+    }
+
+    setPendingPixOrderId(null);
     setCart([]);
     setUseFidelityRescue(false);
     setDeliveryAddress(null);
@@ -2020,6 +2037,84 @@ export const ClientDashboard = ({
         if (!response.ok || !result.success) {
           throw new Error(result.message || 'Erro ao gerar Pix no Mercado Pago.');
         }
+
+        // ─── REGISTRO ANTECIPADO DO PEDIDO ───────────────────────────────────────
+        // Salva o pedido IMEDIATAMENTE com status 'awaiting_payment' antes de mostrar
+        // o QR Code. Isso garante que a compra fica registrada no sistema mesmo que
+        // o pagamento seja extornado ou cancelado via app bancário, sem esperar pelo
+        // webhook de confirmação do Mercado Pago.
+        try {
+          let pixDailySeq = 1;
+          try {
+            const now = new Date();
+            const bStart = new Date(now);
+            if (now.getHours() < 6) bStart.setDate(now.getDate() - 1);
+            bStart.setHours(6, 0, 0, 0);
+            const qDailyPix = query(
+              collection(db, 'orders'),
+              where('createdAt', '>=', bStart.toISOString())
+            );
+            const snapPix = await getDocs(qDailyPix);
+            pixDailySeq = snapPix.size + 1;
+          } catch { pixDailySeq = Math.floor(Math.random() * 900) + 100; }
+
+          const pixOrderData: any = {
+            clientUid: user?.uid || '',
+            clientName: user?.displayName || user?.email || 'Cliente Anônimo',
+            clientPhone: userData?.phoneNumber || '',
+            usedFidelityRescue: useFidelityRescue && canRescueFidelity,
+            items: cart.map(item => {
+              let customSuffix = '';
+              const details: string[] = [];
+              if (item.category === 'Pastéis Salgados') {
+                if (item.withCatupiry) details.push('Catupiry');
+                if (item.withBorda) details.push('Borda de Queijo');
+                if (item.ingredients && item.ingredients.length > 0)
+                  details.push(`Adicionais: ${item.ingredients.join(', ')}`);
+              }
+              if (item.category === 'Pastéis Doces') {
+                if (item.withBorda) details.push('Borda de Kit-Kat');
+              }
+              if (details.length > 0) customSuffix = ` (${details.join(' + ')})`;
+              return {
+                id: item.id,
+                name: `${item.name}${customSuffix}`,
+                price: item.price,
+                quantity: item.quantity,
+                category: item.category
+              };
+            }),
+            total: finalTotal,
+            deliveryFee: orderType === 'delivery' ? deliveryFee : 0,
+            serviceFee: orderType === 'dine_in_table' ? serviceFee : 0,
+            // 'awaiting_payment' = QR Code gerado mas pagamento ainda não confirmado
+            status: 'awaiting_payment',
+            createdAt: new Date().toISOString(),
+            orderType,
+            tableNumber: orderType === 'dine_in_table' ? tableNumber : null,
+            paymentMethod: 'pix',
+            mercadoPagoPaymentId: result.paymentId,
+            dailySeq: pixDailySeq,
+            address: orderType === 'delivery' ? {
+              street: deliveryAddress!.street,
+              number: deliveryAddress!.number || '',
+              neighborhood: deliveryAddress!.neighborhood || '',
+              city: deliveryAddress!.city || 'Rio de Janeiro',
+              zipCode: deliveryAddress!.zipCode || '',
+              complement: deliveryAddress!.complement || '',
+              lat: deliveryAddress!.lat,
+              lng: deliveryAddress!.lng,
+            } : null,
+          };
+
+          const pixOrderRef = await addDoc(collection(db, 'orders'), pixOrderData);
+          setPendingPixOrderId(pixOrderRef.id);
+          console.log('[PIX] Pedido registrado antecipadamente. ID:', pixOrderRef.id);
+        } catch (saveErr) {
+          console.error('[PIX] Erro ao salvar pedido antecipadamente:', saveErr);
+          // Continua mesmo com erro — o fallback em completeCheckoutAfterPixPayment cria o pedido ao aprovar
+        }
+        // ─────────────────────────────────────────────────────────────────────────
 
         setPixPaymentId(result.paymentId);
         setPixQrCode(result.qrCode);

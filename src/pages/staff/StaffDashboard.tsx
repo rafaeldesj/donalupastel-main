@@ -709,7 +709,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
   const attendingOrders = orders.filter(o => o.status === 'ready');
   const cashierOrders = orders.filter(o => o.status === 'ready');
-  const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento');
+  const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento' || o.status === 'awaiting_payment');
   const deliveryOrders = orders.filter(o => (o.status === 'ready' || o.status === 'delivering') && o.address);
 
   const hasAnyFunction = staff && (staff.cook || staff.attendant || staff.cashier || staff.delivery);
@@ -1385,7 +1385,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                     <h3 style={{ fontSize: '1.4rem' }}>Aguardando Avaliação no Caixa ({cashierEvaluationOrders.length} pendentes)</h3>
                   </div>
                   <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0.25rem 0 1rem 0' }}>
-                    Pedidos com pagamento físico (dinheiro ou cartão na entrega/retirada) que aguardam baixa manual.
+                    Pedidos com pagamento físico (dinheiro ou cartão na entrega/retirada) que aguardam baixa manual, e pedidos com <strong style={{ color: '#f59e0b' }}>Pix gerado mas não confirmado</strong> (QR Code escaneado, aguardando confirmação do banco).
                   </p>
                   <div className="orders-queue" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
                     {cashierEvaluationOrders.length === 0 ? (
@@ -1394,7 +1394,23 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       </p>
                     ) : (
                       cashierEvaluationOrders.map((order) => (
-                        <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                        <div key={order.id} className="order-item" style={{
+                          background: order.status === 'awaiting_payment' ? 'rgba(245,158,11,0.05)' : 'rgba(255,255,255,0.02)',
+                          border: order.status === 'awaiting_payment' ? '1px solid rgba(245,158,11,0.25)' : '1px solid rgba(255,255,255,0.05)',
+                          padding: '1.25rem',
+                          borderRadius: '16px'
+                        }}>
+                          {order.status === 'awaiting_payment' && (
+                            <div style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                              background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                              border: '1px solid rgba(245,158,11,0.3)', borderRadius: '20px',
+                              padding: '0.2rem 0.65rem', fontSize: '0.75rem', fontWeight: 700,
+                              marginBottom: '0.6rem'
+                            }}>
+                              ⏳ PIX gerado — aguardando confirmação do pagamento
+                            </div>
+                          )}
                           <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                               <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
@@ -1406,7 +1422,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                               <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
                               {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
                               <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
-                              <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : order.paymentMethod === 'debito' ? '💳 Débito' : order.paymentMethod === 'debito_point' ? '💴 Débito Maquininha' : order.paymentMethod === 'credito_point' ? '💳 Crédito Maquininha' : '💴 Cartão (maquininha)'}</strong></div>
+                              <div>Método: <strong style={{ color: 'var(--primary-gold)' }}>{order.paymentMethod === 'dinheiro' ? '💵 Dinheiro' : order.paymentMethod === 'pagar_final' ? '🍽️ Pagar no Final' : order.paymentMethod === 'debito' ? '💳 Débito' : order.paymentMethod === 'debito_point' ? '💴 Débito Maquininha' : order.paymentMethod === 'credito_point' ? '💳 Crédito Maquininha' : order.paymentMethod === 'pix' ? '🟢 Pix (aguardando confirmação)' : '💴 Cartão (maquininha)'}</strong></div>
                               {order.paymentMethod === 'dinheiro' && order.changeFor && (
                                 <div style={{ color: '#ef4444' }}>Troco para: <strong>R$ {order.changeFor.toFixed(2).replace('.', ',')}</strong> (Troco: R$ {(order.changeFor - order.total).toFixed(2).replace('.', ',')})</div>
                               )}
