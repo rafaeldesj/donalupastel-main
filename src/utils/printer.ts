@@ -1,7 +1,7 @@
 import type { OrderDocument } from '../types/order';
 
 export interface PrinterSettings {
-  method: 'browser' | 'bluetooth';
+  method: 'browser' | 'bluetooth' | 'serial';
   paperSize: '58mm' | '80mm';
   autoPrintOnNew: boolean;
   autoPrintOnAccept: boolean;
@@ -27,6 +27,27 @@ let activeBluetoothCharacteristic: any = null;
 // Listeners for Bluetooth connection changes
 type ConnectionCallback = (connected: boolean, name?: string) => void;
 const connectionListeners: Set<ConnectionCallback> = new Set();
+
+// Global variables for active Web Serial connection
+let activeSerialPort: any = null;
+
+// Listeners for Serial connection changes
+type SerialConnectionCallback = (connected: boolean, name?: string) => void;
+const serialConnectionListeners: Set<SerialConnectionCallback> = new Set();
+
+export function subscribeToSerialState(callback: SerialConnectionCallback) {
+  serialConnectionListeners.add(callback);
+  callback(isSerialConnected(), getConnectedSerialName());
+  return () => {
+    serialConnectionListeners.delete(callback);
+  };
+}
+
+function notifySerialConnectionListeners() {
+  const connected = isSerialConnected();
+  const name = getConnectedSerialName();
+  serialConnectionListeners.forEach(listener => listener(connected, name));
+}
 
 export function getPrinterSettings(): PrinterSettings {
   try {
@@ -145,6 +166,47 @@ export function isBluetoothConnected(): boolean {
 
 export function getConnectedDeviceName(): string {
   return activeBluetoothDevice?.name || '';
+}
+
+// -------------------------------------------------------------
+// Web Serial Connection Manager (USB / Serial Cable)
+// -------------------------------------------------------------
+export async function connectSerial(): Promise<string> {
+  const serialAPI = (navigator as any).serial;
+  if (!serialAPI) {
+    throw new Error('Web Serial não é suportado neste navegador. Use Google Chrome, Edge ou Opera no computador.');
+  }
+
+  try {
+    const port = await serialAPI.requestPort();
+    await port.open({ baudRate: 9600 });
+    activeSerialPort = port;
+    notifySerialConnectionListeners();
+    return 'Impressora USB (Serial)';
+  } catch (err: any) {
+    console.error('Erro na conexão Serial/USB:', err);
+    throw err;
+  }
+}
+
+export async function disconnectSerial() {
+  if (activeSerialPort) {
+    try {
+      await activeSerialPort.close();
+    } catch (e) {
+      console.error('Erro ao fechar porta serial:', e);
+    }
+  }
+  activeSerialPort = null;
+  notifySerialConnectionListeners();
+}
+
+export function isSerialConnected(): boolean {
+  return !!activeSerialPort;
+}
+
+export function getConnectedSerialName(): string {
+  return activeSerialPort ? 'Impressora USB/Serial' : '';
 }
 
 // -------------------------------------------------------------
@@ -536,6 +598,25 @@ export async function printOrderBluetooth(order: OrderDocument, settings: Printe
 }
 
 // -------------------------------------------------------------
+// Method 3: Direct USB/Serial ESC/POS Printing
+// -------------------------------------------------------------
+export async function printOrderSerial(order: OrderDocument, settings: PrinterSettings): Promise<void> {
+  if (!isSerialConnected() || !activeSerialPort) {
+    throw new Error('A impressora USB está desconectada. Conecte-a nas Configurações.');
+  }
+
+  try {
+    const data = encodeEscPos(order, settings);
+    const writer = activeSerialPort.writable.getWriter();
+    await writer.write(data);
+    writer.releaseLock();
+  } catch (err: any) {
+    console.error('Erro ao enviar dados para a impressora Serial:', err);
+    throw new Error('Falha ao enviar dados de impressão via cabo. Reconecte a impressora.');
+  }
+}
+
+// -------------------------------------------------------------
 // High-Level Print Orchestrator
 // -------------------------------------------------------------
 export async function printOrder(order: OrderDocument): Promise<void> {
@@ -545,8 +626,10 @@ export async function printOrder(order: OrderDocument): Promise<void> {
   for (let i = 0; i < loopCount; i++) {
     if (settings.method === 'browser') {
       printOrderBrowser(order, settings);
-    } else {
+    } else if (settings.method === 'bluetooth') {
       await printOrderBluetooth(order, settings);
+    } else if (settings.method === 'serial') {
+      await printOrderSerial(order, settings);
     }
   }
 }

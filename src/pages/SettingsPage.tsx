@@ -6,7 +6,21 @@ import { User, Store, Shield, CreditCard, Save, Trash2, Clock, MapPin, AlertCirc
 import { logAuditAction } from '../utils/audit';
 import { SecurityCameraSettings } from '../components/SecurityCameraSettings';
 import { TableQrCodeGenerator } from '../components/TableQrCodeGenerator';
-import { getPrinterSettings, savePrinterSettings, connectPrinter, disconnectPrinter, isBluetoothConnected, getConnectedDeviceName, subscribeToBluetoothState, printMockOrder } from '../utils/printer';
+import { 
+  getPrinterSettings, 
+  savePrinterSettings, 
+  connectPrinter, 
+  disconnectPrinter, 
+  isBluetoothConnected, 
+  getConnectedDeviceName, 
+  subscribeToBluetoothState, 
+  printMockOrder,
+  connectSerial,
+  disconnectSerial,
+  isSerialConnected,
+  getConnectedSerialName,
+  subscribeToSerialState
+} from '../utils/printer';
 import type { PrinterSettings } from '../utils/printer';
 
 interface StoreConfig {
@@ -43,16 +57,26 @@ export const SettingsPage = () => {
   const [printerSettings, setPrinterSettingsState] = useState<PrinterSettings>(() => getPrinterSettings());
   const [isBtConnected, setIsBtConnected] = useState(isBluetoothConnected());
   const [btDeviceName, setBtDeviceName] = useState(getConnectedDeviceName());
+  const [isSerialConn, setIsSerialConn] = useState(isSerialConnected());
+  const [serialDeviceName, setSerialDeviceName] = useState(getConnectedSerialName());
   const [isPairing, setIsPairing] = useState(false);
+  const [isSerialPairing, setIsSerialPairing] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [printSuccess, setPrintSuccess] = useState<boolean>(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeToBluetoothState((connected, name) => {
+    const unsubscribeBt = subscribeToBluetoothState((connected, name) => {
       setIsBtConnected(connected);
       setBtDeviceName(name || '');
     });
-    return unsubscribe;
+    const unsubscribeSerial = subscribeToSerialState((connected, name) => {
+      setIsSerialConn(connected);
+      setSerialDeviceName(name || '');
+    });
+    return () => {
+      unsubscribeBt();
+      unsubscribeSerial();
+    };
   }, []);
 
   const handleConnectBt = async () => {
@@ -72,6 +96,26 @@ export const SettingsPage = () => {
 
   const handleDisconnectBt = () => {
     disconnectPrinter();
+    setPrintSuccess(false);
+  };
+
+  const handleConnectSerial = async () => {
+    setIsSerialPairing(true);
+    setPrintError(null);
+    setPrintSuccess(false);
+    try {
+      await connectSerial();
+      setPrintSuccess(true);
+      setTimeout(() => setPrintSuccess(false), 3000);
+    } catch (err: any) {
+      setPrintError(err.message || 'Erro ao conectar à impressora USB/Serial.');
+    } finally {
+      setIsSerialPairing(false);
+    }
+  };
+
+  const handleDisconnectSerial = () => {
+    disconnectSerial();
     setPrintSuccess(false);
   };
 
@@ -2324,16 +2368,17 @@ export const SettingsPage = () => {
                     <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', fontWeight: 600 }}>MÉTODO DE IMPRESSÃO</label>
                     <select
                       value={printerSettings.method}
-                      onChange={(e) => handleSavePrinterSettings({ ...printerSettings, method: e.target.value as 'browser' | 'bluetooth' })}
+                      onChange={(e) => handleSavePrinterSettings({ ...printerSettings, method: e.target.value as 'browser' | 'bluetooth' | 'serial' })}
                       style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: '10px', background: '#0b0f19', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', cursor: 'pointer', fontSize: '0.9rem' }}
                     >
-                      <option value="browser">Navegador (Padrão do Sistema) - Recomendado</option>
+                      <option value="browser">Navegador (Padrão do Sistema) - Recomendado p/ Cabo USB</option>
                       <option value="bluetooth">Bluetooth Direto (Web Bluetooth BLE API)</option>
+                      <option value="serial">Cabo USB Direto (Web Serial API) - Chrome/Edge</option>
                     </select>
                     <p style={{ margin: '0.4rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
-                      {printerSettings.method === 'browser' 
-                        ? 'Utiliza o gerenciador de impressão do próprio sistema (Windows/Android/iOS). Altamente compatível com impressoras pareadas por Bluetooth clássico ou cabo.' 
-                        : 'Envia dados binários brutos (ESC/POS) diretamente à impressora via Bluetooth do navegador. Não abre telas do sistema. Requer navegador compatível (Chrome/Edge).'}
+                      {printerSettings.method === 'browser' && 'Utiliza o gerenciador de impressão do próprio sistema (Windows/Android/iOS). Altamente compatível com qualquer impressora pareada por Bluetooth clássico ou conectada por cabo USB.'}
+                      {printerSettings.method === 'bluetooth' && 'Envia dados binários brutos (ESC/POS) diretamente à impressora via Bluetooth BLE do navegador. Não abre telas do sistema.'}
+                      {printerSettings.method === 'serial' && 'Envia dados binários brutos (ESC/POS) diretamente à impressora USB conectada por cabo serial virtual COM. Não abre telas do sistema.'}
                     </p>
                   </div>
 
@@ -2364,42 +2409,77 @@ export const SettingsPage = () => {
                   </div>
                 </div>
 
-                {/* Status Bluetooth / Conexão */}
+                {/* Status de Conexão de Hardware */}
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                   <h4 style={{ margin: 0, color: '#fff', fontSize: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }}>Conexão de Hardware</h4>
                   
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(0,0,0,0.15)', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: isBtConnected ? '#10b981' : '#ef4444', display: 'inline-block' }}></span>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
-                      {isBtConnected ? `Conectado: ${btDeviceName}` : 'Impressora Bluetooth Desconectada'}
-                    </span>
-                  </div>
+                  {printerSettings.method === 'bluetooth' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(0,0,0,0.15)', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: isBtConnected ? '#10b981' : '#ef4444', display: 'inline-block' }}></span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
+                          {isBtConnected ? `Conectado: ${btDeviceName}` : 'Impressora Bluetooth Desconectada'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        {!isBtConnected ? (
+                          <button
+                            type="button"
+                            disabled={isPairing}
+                            onClick={handleConnectBt}
+                            style={{ flex: 1, padding: '0.75rem', background: 'var(--primary-gold)', color: '#0b0f19', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                          >
+                            {isPairing ? <span className="spinner" style={{ width: '14px', height: '14px', border: '2px solid #0b0f19', borderTopColor: 'transparent' }} /> : <Printer size={16} />}
+                            Parear / Conectar Impressora
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleDisconnectBt}
+                            style={{ flex: 1, padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}
+                          >
+                            Desconectar Bluetooth
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
 
-                  {printerSettings.method === 'bluetooth' ? (
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
-                      {!isBtConnected ? (
-                        <button
-                          type="button"
-                          disabled={isPairing}
-                          onClick={handleConnectBt}
-                          style={{ flex: 1, padding: '0.75rem', background: 'var(--primary-gold)', color: '#0b0f19', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
-                        >
-                          {isPairing ? <span className="spinner" style={{ width: '14px', height: '14px', border: '2px solid #0b0f19', borderTopColor: 'transparent' }} /> : <Printer size={16} />}
-                          Parear / Conectar Impressora
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleDisconnectBt}
-                          style={{ flex: 1, padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}
-                        >
-                          Desconectar
-                        </button>
-                      )}
-                    </div>
-                  ) : (
+                  {printerSettings.method === 'serial' && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(0,0,0,0.15)', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: isSerialConn ? '#10b981' : '#ef4444', display: 'inline-block' }}></span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
+                          {isSerialConn ? `Conectado via USB: ${serialDeviceName}` : 'Impressora USB/Cabo Desconectada'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        {!isSerialConn ? (
+                          <button
+                            type="button"
+                            disabled={isSerialPairing}
+                            onClick={handleConnectSerial}
+                            style={{ flex: 1, padding: '0.75rem', background: 'var(--primary-gold)', color: '#0b0f19', border: 'none', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+                          >
+                            {isSerialPairing ? <span className="spinner" style={{ width: '14px', height: '14px', border: '2px solid #0b0f19', borderTopColor: 'transparent' }} /> : <Printer size={16} />}
+                            Conectar Impressora USB (Cabo)
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleDisconnectSerial}
+                            style={{ flex: 1, padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '10px', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer' }}
+                          >
+                            Desconectar USB
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {printerSettings.method === 'browser' && (
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                      Como você está usando o método **Navegador (Padrão do Sistema)**, a conexão Bluetooth direta com o site não é necessária. O sistema utilizará as impressoras instaladas no seu computador ou celular.
+                      Como você está usando o método **Navegador (Padrão do Sistema)**, a conexão direta não é necessária. O sistema utilizará o driver e as impressoras instaladas no seu sistema operacional (perfeito para cabos USB comuns).
                     </p>
                   )}
 
