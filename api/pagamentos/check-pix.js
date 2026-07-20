@@ -37,6 +37,18 @@ function nativeRequest(url, method, headers, data) {
   });
 }
 
+/**
+ * Determines if the given token is a placeholder / mock token.
+ */
+function detectIsMock(token) {
+  if (!token) return true;
+  if (typeof token !== 'string') return true;
+  const t = token.trim();
+  if (!t || t === 'mock' || t === 'null' || t === 'undefined') return true;
+  if (t.startsWith('APP_USR-MOCK-') || t.includes('-MOCK-') || t.startsWith('TEST-')) return true;
+  return false;
+}
+
 export default async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -63,10 +75,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, message: 'paymentId é obrigatório.' });
     }
 
-    const isMock = !token || token === 'mock' || token === '' || token === 'null' || token === 'undefined';
+    const isMock = detectIsMock(token) || paymentId.startsWith('PAY_MOCK_');
 
     if (isMock) {
-      // Para fins de mock em ambiente serverless, se for um ID de mock, consideramos aprovado após 5 segundos baseados no timestamp ou retornamos aprovado diretamente
+      // Mock environment: auto-approve after a short simulated delay.
+      // Since Vercel functions are stateless, we approve if the paymentId follows the mock pattern.
       return res.status(200).json({ success: true, status: 'approved' });
     }
 

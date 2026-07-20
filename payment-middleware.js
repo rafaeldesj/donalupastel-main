@@ -1,6 +1,7 @@
 import https from 'https';
 
 // Função auxiliar para fazer requisições HTTP usando o módulo nativo 'https' para máxima compatibilidade no Node.js
+// Aceita `data` como objeto (serializa em JSON) ou string (envia como-está, para form-encoded).
 function nativeRequest(url, method, headers, data) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
@@ -32,11 +33,13 @@ function nativeRequest(url, method, headers, data) {
     });
 
     if (data) {
-      req.write(JSON.stringify(data));
+      // If data is already a string (e.g. form-encoded), send as-is; otherwise serialize to JSON
+      req.write(typeof data === 'string' ? data : JSON.stringify(data));
     }
     req.end();
   });
 }
+
 
 export const processPaymentMiddleware = async (req, res) => {
   let body = '';
@@ -180,6 +183,16 @@ export const processPaymentMiddleware = async (req, res) => {
   });
 };
 
+// Detects placeholder/mock tokens including the APP_USR-MOCK- pattern from the old simulated OAuth flow
+function detectIsMock(token) {
+  if (!token) return true;
+  if (typeof token !== 'string') return true;
+  const t = token.trim();
+  if (!t || t === 'mock' || t === 'null' || t === 'undefined') return true;
+  if (t.startsWith('APP_USR-MOCK-') || t.includes('-MOCK-') || t.startsWith('TEST-')) return true;
+  return false;
+}
+
 export const createPixMiddleware = async (req, res) => {
   let body = '';
   req.on('data', chunk => {
@@ -189,12 +202,12 @@ export const createPixMiddleware = async (req, res) => {
   req.on('end', async () => {
     try {
       const data = JSON.parse(body);
-      const { token, amount, email, name, cpf } = data;
+      const { token, amount, email, name, cpf, devPercentage } = data;
       
-      const isMock = !token || token === 'mock' || token === '' || token === 'null' || token === 'undefined';
+      const isMock = detectIsMock(token);
       
       if (isMock) {
-        console.log('[Mercado Pago Pix] Rodando em modo MOCK.');
+        console.log('[Mercado Pago Pix] Rodando em modo MOCK (token ausente ou fictício).');
         await new Promise(resolve => setTimeout(resolve, 800));
         
         const mockPaymentId = 'PAY_MOCK_' + Math.random().toString(36).substring(2, 11).toUpperCase();
@@ -213,7 +226,8 @@ export const createPixMiddleware = async (req, res) => {
           paymentId: mockPaymentId,
           qrCode: '00020101021226870014br.gov.bcb.pix2565qr-mock-code-dona-lu-pastelaria-1234567890',
           qrCodeBase64: '',
-          status: 'pending'
+          status: 'pending',
+          isMock: true
         }));
       }
       
@@ -227,9 +241,10 @@ export const createPixMiddleware = async (req, res) => {
       
       const firstName = name.split(' ')[0] || 'Cliente';
       const lastName = name.split(' ').slice(1).join(' ') || 'Dona Lu';
+      const transactionAmount = parseFloat(amount);
       
       const payload = {
-        transaction_amount: parseFloat(amount),
+        transaction_amount: transactionAmount,
         description: 'Pedido Dona Lu Pastelaria',
         payment_method_id: 'pix',
         payer: {
@@ -238,10 +253,19 @@ export const createPixMiddleware = async (req, res) => {
           last_name: lastName,
           identification: {
             type: 'CPF',
-            number: cpf.replace(/\D/g, '') || '45678912364'
+            number: (cpf || '').replace(/\D/g, '') || '45678912364'
           }
         }
       };
+
+      // Split: add application_fee when devPercentage is configured
+      if (devPercentage && devPercentage > 0) {
+        const fee = parseFloat((transactionAmount * devPercentage / 100).toFixed(2));
+        if (fee >= 0.01) {
+          payload.application_fee = fee;
+          console.log(`[Mercado Pago Pix] Split: application_fee = R$${fee.toFixed(2)} (${devPercentage}%)`);
+        }
+      }
       
       const response = await nativeRequest(mpUrl, 'POST', headers, payload);
       
@@ -283,7 +307,7 @@ export const checkPixMiddleware = async (req, res) => {
       return res.end(JSON.stringify({ success: false, message: 'paymentId é obrigatório.' }));
     }
     
-    const isMock = !token || token === 'mock' || token === '' || token === 'null' || token === 'undefined';
+    const isMock = detectIsMock(token) || paymentId.startsWith('PAY_MOCK_');
     
     if (isMock) {
       const mockPay = global.mockPayments?.[paymentId];
@@ -489,3 +513,99 @@ export const checkPointOrderMiddleware = async (req, res) => {
   }
 };
 
+/**
+ * Middleware local para trocar o código OAuth do Mercado Pago por um access_token real.
+ * Espelha a lógica do serverless api/mercadopago/exchange-token.js.
+ * Em ambiente local, o MP_APP_SECRET deve estar no arquivo .env.local.
+ */
+export const mpOAuthExchangeMiddleware = async (req, res) => {
+  let body = '';
+  req.on('data', chunk => { body += chunk.toString(); });
+
+  req.on('end', async () => {
+    try {
+      const data = JSON.parse(body);
+      const { code, clientId, redirectUri } = data;
+
+      const clientSecret = process.env.MP_APP_SECRET || process.env.VITE_MP_APP_SECRET;
+
+      if (!code) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, message: 'code OAuth é obrigatório.' }));
+      }
+      if (!clientId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ success: false, message: 'clientId é obrigatório.' }));
+      }
+      if (!clientSecret) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: false,
+          message: 'MP_APP_SECRET não está configurado. Adicione MP_APP_SECRET no arquivo .env.local para desenvolvimento local.'
+        }));
+      }
+
+      const formBody = [
+        'grant_type=authorization_code',
+        `client_id=${encodeURIComponent(clientId)}`,
+        `client_secret=${encodeURIComponent(clientSecret)}`,
+        `code=${encodeURIComponent(code)}`,
+        `redirect_uri=${encodeURIComponent(redirectUri || '')}`
+      ].join('&');
+
+      const tokenRes = await nativeRequest(
+        'https://api.mercadopago.com/oauth/token',
+        'POST',
+        {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(formBody).toString()
+        },
+        formBody
+      );
+
+      if (!tokenRes.ok) {
+        console.error('[MP OAuth Local] Falha na troca de código:', tokenRes.json || tokenRes.text);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({
+          success: false,
+          message: tokenRes.json?.message || tokenRes.json?.error_description || 'Erro ao trocar código por token.',
+          details: tokenRes.json
+        }));
+      }
+
+      const { access_token, refresh_token, user_id, scope } = tokenRes.json;
+
+      let email = '', nickname = '';
+      try {
+        const userRes = await nativeRequest(
+          `https://api.mercadopago.com/users/${user_id}`,
+          'GET',
+          { 'Authorization': `Bearer ${access_token}`, 'Accept': 'application/json' }
+        );
+        if (userRes.ok) {
+          email = userRes.json?.email || '';
+          nickname = userRes.json?.nickname || userRes.json?.first_name || '';
+        }
+      } catch { /* non-fatal */ }
+
+      console.log(`[MP OAuth Local] Token trocado com sucesso para userId: ${user_id} (${email})`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        success: true,
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        userId: user_id,
+        scope,
+        email,
+        nickname
+      }));
+
+    } catch (err) {
+      console.error('[MP OAuth Local] Erro interno:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: false, message: 'Erro interno ao trocar código por token.' }));
+    }
+  });
+};

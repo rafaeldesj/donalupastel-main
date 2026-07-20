@@ -36,6 +36,20 @@ const MainLayout = () => {
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
+  // Detect Mercado Pago OAuth redirect — store the code and navigate to settings
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mpCode = params.get('code');
+    if (mpCode) {
+      // Persist the code so SettingsPage can pick it up after navigation
+      sessionStorage.setItem('mp_oauth_pending_code', mpCode);
+      // Clean the URL so the code isn't reused on refresh
+      window.history.replaceState({}, '', window.location.pathname);
+      // Navigate to settings to complete the exchange
+      setActiveView('configuracoes');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Real-time store configurations and status
   const [storeConfig, setStoreConfig] = useState<any>(null);
   const [storeStatus, setStoreStatus] = useState<{ status: 'open' | 'closing_soon' | 'closed'; label: string }>({ status: 'closed', label: 'Fechado' });

@@ -220,6 +220,53 @@ export const SettingsPage = () => {
     setTimeout(() => setMessage(null), 4000);
   };
 
+  const [exchangingOAuth, setExchangingOAuth] = useState(false);
+
+  // Process the MP OAuth code that was stored by App.tsx after the redirect
+  useEffect(() => {
+    const pendingCode = sessionStorage.getItem('mp_oauth_pending_code');
+    if (!pendingCode || !isAdmin || !storeConfig) return;
+
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+    const doExchange = async () => {
+      setExchangingOAuth(true);
+      sessionStorage.removeItem('mp_oauth_pending_code');
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/mercadopago/exchange-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: pendingCode,
+            clientId: storeConfig.devClientId || '',
+            redirectUri: window.location.origin + '/'
+          })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Falha ao trocar código OAuth.');
+        }
+        // Save the real access_token to Firestore immediately
+        const docRef = doc(db, 'settings', 'store_config');
+        await updateDoc(docRef, {
+          storeOwnerAccessToken: result.accessToken,
+          storeOwnerEmail: result.email || storeConfig.storeOwnerEmail || ''
+        });
+        setStoreConfig((prev: any) => ({
+          ...prev,
+          storeOwnerAccessToken: result.accessToken,
+          storeOwnerEmail: result.email || prev?.storeOwnerEmail || ''
+        }));
+        showFeedback('success', `✅ Conta do estabelecimento (${result.email || result.nickname || 'ID ' + result.userId}) conectada com sucesso via Mercado Pago!`);
+      } catch (err: any) {
+        console.error('[MP OAuth] Erro na troca de código:', err);
+        showFeedback('error', `❌ Erro ao conectar conta MP: ${err.message}`);
+      } finally {
+        setExchangingOAuth(false);
+      }
+    };
+    doExchange();
+  }, [isAdmin, storeConfig?.devClientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [submittingDevMP, setSubmittingDevMP] = useState(false);
 
   const handleSaveDevMPConfig = async (e: React.FormEvent) => {
@@ -298,25 +345,18 @@ export const SettingsPage = () => {
   };
 
   const handleLoginEstablishment = () => {
-    const devClientId = storeConfig.devClientId || '87878437306';
+    const devClientId = storeConfig.devClientId || '';
+    if (!devClientId) {
+      showFeedback('error', 'Configure o Client ID da aplicação Mercado Pago (campo "Client ID") antes de conectar.');
+      return;
+    }
     const redirectUri = encodeURIComponent(window.location.origin + '/');
     const oauthUrl = `https://auth.mercadopago.com/authorization?client_id=${devClientId}&response_type=code&platform_id=mp&redirect_uri=${redirectUri}`;
     
-    // Abre a janela do Mercado Pago em outra aba
-    window.open(oauthUrl, '_blank');
-
-    // Pergunta o e-mail para conectar após abrir a aba
-    setTimeout(() => {
-      const email = prompt("Após realizar o login e autorizar na janela do Mercado Pago, digite o e-mail da conta vinculada para confirmar a conexão:");
-      if (email) {
-        setStoreConfig(prev => ({
-          ...prev,
-          storeOwnerEmail: email,
-          storeOwnerAccessToken: "APP_USR-MOCK-STORE-ACCESS-TOKEN-" + Math.random().toString(36).substring(2, 10).toUpperCase()
-        }));
-        showFeedback('success', `Conta do estabelecimento (${email}) conectada com sucesso via Mercado Pago!`);
-      }
-    }, 2000);
+    // Opens the MP authorization page. After the user authorizes, MP redirects
+    // back to this app with ?code=..., which App.tsx detects and stores in sessionStorage.
+    // Then this page's useEffect picks it up and exchanges for a real access_token.
+    window.location.href = oauthUrl;
   };
 
   // Save profile & address configurations
@@ -1813,7 +1853,12 @@ export const SettingsPage = () => {
                   Conta do Estabelecimento (Recebe {100 - (storeConfig.devPercentage ?? 1)}%)
                 </label>
 
-                {storeConfig.storeOwnerEmail ? (
+                {exchangingOAuth ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'rgba(0, 158, 227, 0.08)', border: '1px solid rgba(0, 158, 227, 0.2)', borderRadius: '8px' }}>
+                    <div className="spinner" style={{ width: '18px', height: '18px', border: '2px solid rgba(0,158,227,0.2)', borderTopColor: '#009ee3', flexShrink: 0 }} />
+                    <span style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 600 }}>Conectando conta ao Mercado Pago... aguarde</span>
+                  </div>
+                ) : storeConfig.storeOwnerEmail && storeConfig.storeOwnerAccessToken && !storeConfig.storeOwnerAccessToken.includes('MOCK') ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                       <span style={{ color: '#34d399', fontSize: '0.85rem', fontWeight: 600 }}>✓ Conectado via Mercado Pago</span>
@@ -1842,6 +1887,7 @@ export const SettingsPage = () => {
                     <button
                       type="button"
                       onClick={handleLoginEstablishment}
+                      disabled={!storeConfig.devClientId}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1849,20 +1895,24 @@ export const SettingsPage = () => {
                         padding: '0.65rem 1.25rem',
                         borderRadius: '8px',
                         border: 'none',
-                        background: '#009ee3',
+                        background: storeConfig.devClientId ? '#009ee3' : 'rgba(255,255,255,0.1)',
                         color: '#fff',
                         fontWeight: 600,
                         fontSize: '0.85rem',
-                        cursor: 'pointer',
+                        cursor: storeConfig.devClientId ? 'pointer' : 'not-allowed',
                         transition: 'background 0.2s'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#0082c5'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#009ee3'}
+                      onMouseEnter={(e) => { if (storeConfig.devClientId) e.currentTarget.style.background = '#0082c5'; }}
+                      onMouseLeave={(e) => { if (storeConfig.devClientId) e.currentTarget.style.background = '#009ee3'; }}
                     >
                       <span>Conectar com Mercado Pago ({100 - (storeConfig.devPercentage ?? 1)}%)</span>
                     </button>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
+                      ⚠️ Requer a variável de ambiente <strong style={{ color: 'rgba(255,255,255,0.55)' }}>MP_APP_SECRET</strong> configurada no Vercel com o Client Secret da sua aplicação MP.
+                    </p>
                   </div>
                 )}
+
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
