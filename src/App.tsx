@@ -3,11 +3,13 @@ import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
 import { DeliveryMap } from './components/DeliveryMap';
-import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown, Grid, Boxes } from 'lucide-react';
+import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown, Grid, Boxes, MessageCircle } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 import logoDonaluMobile from './assets/logo_donalu_mobile.png';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './config/firebase';
+import { VirtualAssistantBubble } from './components/VirtualAssistantBubble';
+import { ClientSupportChat } from './components/ClientSupportChat';
 
 // Lazy-loaded components for code-splitting performance
 const ClientDashboard = lazy(() => import('./pages/client/ClientDashboard'));
@@ -21,6 +23,7 @@ const OrderTracking = lazy(() => import('./pages/client/OrderTracking'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const TableMap = lazy(() => import('./pages/staff/TableMap'));
 const StockControl = lazy(() => import('./pages/staff/StockControl'));
+const SupportPanel = lazy(() => import('./pages/staff/SupportPanel'));
 
 // Premium feedback state for lazy loading
 const ViewLoader = () => (
@@ -240,6 +243,11 @@ const MainLayout = () => {
       menuItems.push({ id: 'fidelidade', label: 'Cartão Fidelidade', icon: Heart });
     }
 
+    // Atendimento I.A. visível para clientes e equipe administrativa para testes
+    if (['client', 'developer', 'owner', 'manager'].includes(role)) {
+      menuItems.push({ id: 'suporte_virtual', label: 'Atendimento I.A.', icon: MessageCircle });
+    }
+
     // Fila da cozinha (Cozinheiro, admin, owner, dev)
     if (role === 'developer' || role === 'owner' || role === 'manager' || (role === 'staff' && staff?.cook)) {
       menuItems.push({ id: 'cozinha', label: 'Fila Cozinha', icon: ChefHat });
@@ -286,6 +294,11 @@ const MainLayout = () => {
       menuItems.push({ id: 'estoque', label: 'Controle de Estoque', icon: Boxes });
     }
 
+    // Painel de Atendimento (Suporte & I.A.) — visível a todos, menos clientes e entregadores
+    if (role !== 'client' && !(role === 'staff' && staff?.delivery)) {
+      menuItems.push({ id: 'painel_atendimento', label: 'Suporte & I.A.', icon: MessageCircle });
+    }
+
     // Configurações — visível para todos os usuários logados
     if (user) {
       menuItems.push({ id: 'configuracoes', label: 'Configurações', icon: Settings });
@@ -293,9 +306,9 @@ const MainLayout = () => {
   }
 
   const menuGroups = [
-    { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade'] },
+    { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade', 'suporte_virtual'] },
     { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada'] },
-    { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'mapa_mesas', 'estoque', 'admin', 'teste_mapa'] },
+    { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'mapa_mesas', 'estoque', 'painel_atendimento', 'admin', 'teste_mapa'] },
     { label: 'Configurações', ids: ['users', 'configuracoes'] },
   ];
 const getRoleLabel = (r: string): React.ReactNode => {
@@ -441,6 +454,8 @@ const getRoleLabel = (r: string): React.ReactNode => {
             {activeView === 'entrega_finalizada' && <DeliveryHistory />}
             {activeView === 'admin' && <AdminDashboard />}
             {activeView === 'estoque' && <StockControl />}
+            {activeView === 'painel_atendimento' && <SupportPanel />}
+            {activeView === 'suporte_virtual' && <ClientSupportChat />}
             {activeView === 'users' && <UserManagement />}
             {activeView === 'configuracoes' && <SettingsPage />}
             {activeView === 'mapa_mesas' && <TableMap />}
@@ -468,6 +483,7 @@ const getRoleLabel = (r: string): React.ReactNode => {
         <p style={{ margin: 0 }}>📍 © 2026 Dona Lu Pastelaria • Rua Jícara, 239 - Campo Grande | 📞 (21) 3439-5241</p>
         <p style={{ margin: 0 }}> Desenvolvedor Rafael Jorge (21) 99565-5031</p>
       </footer>
+      <VirtualAssistantBubble />
     </div>
   );
 };

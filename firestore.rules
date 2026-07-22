@@ -112,5 +112,19 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isStaff();
     }
+
+
+
+    // Regras para a coleção de chats de suporte (support_chats)
+    match /support_chats/{chatId} {
+      allow read, write: if (request.auth != null && (request.auth.uid == chatId || isStaff()))
+                          || chatId.matches('^visitante_.*');
+    }
+
+    // Regras para a coleção de regras de treinamento da I.A. (ai_rules)
+    match /ai_rules/{ruleId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
   }
 }

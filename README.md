@@ -50,6 +50,8 @@ As funções de backend ficam localizadas na pasta `/api` e rodam como serverles
 - [src/components/DeliveryMap.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/components/DeliveryMap.tsx): Componente Leaflet para exibição interativa de rotas, endereços e rastreamento de entregadores em tempo real.
 - [src/components/TableQrCodeGenerator.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/components/TableQrCodeGenerator.tsx): Interface para gerar QR Codes específicos para as mesas físicas do estabelecimento.
 - [src/components/SecurityCameraSettings.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/components/SecurityCameraSettings.tsx): Painel de configuração de monitoramento e visualização de câmeras de segurança locais.
+- [src/components/VirtualAssistantBubble.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/components/VirtualAssistantBubble.tsx): Balão flutuante no canto inferior direito que abre o chat do atendente virtual para clientes/visitantes.
+- [src/components/ClientSupportChat.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/components/ClientSupportChat.tsx): Interface de chat do cliente com o atendente virtual (I.A.) e operador humano.
 
 #### 📄 Páginas & Dashboards (`/src/pages`)
 - **Configurações:**
@@ -61,6 +63,7 @@ As funções de backend ficam localizadas na pasta `/api` e rodam como serverles
   - [src/pages/staff/StaffDashboard.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/staff/StaffDashboard.tsx): Painel unificado de tarefas operacionais. Filtra os pedidos com base no cargo do funcionário logado (exibe a fila de preparo para `cook`, fila de entrega/balcão para `attendant`, e controle financeiro de pagamentos pendentes para `cashier`).
   - [src/pages/staff/TableMap.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/staff/TableMap.tsx): Mapa gráfico das mesas do salão indicando ocupação e status dos pedidos locais.
   - [src/pages/staff/StockControl.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/staff/StockControl.tsx): Painel de controle de estoque de produtos, permitindo edição rápida de quantidades e controle de ocultação.
+  - [src/pages/staff/SupportPanel.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/staff/SupportPanel.tsx): Painel de atendimento humano para acompanhar conversas de suporte em tempo real, intervir (pausando a I.A.) e treinar o chatbot com instruções/prompts.
 - **Entregadores:**
   - [src/pages/delivery/DeliveryActive.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/delivery/DeliveryActive.tsx): Painel de entregas ativas com mapa de rota do entregador até o cliente.
   - [src/pages/delivery/DeliveryHistory.tsx](file:///e:/REPOSITORIOS%20-%20PROJETOS/DONA-LU-PASTELARIA/src/pages/delivery/DeliveryHistory.tsx): Relatório de entregas finalizadas pelo entregador logado.

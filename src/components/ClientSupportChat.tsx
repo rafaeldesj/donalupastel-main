@@ -1,0 +1,485 @@
+import { useEffect, useState, useRef } from 'react';
+import { doc, onSnapshot, setDoc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { useAuth } from '../hooks/useAuth';
+import { Send, Bot, User } from 'lucide-react';
+
+interface Message {
+  sender: 'client' | 'assistant' | 'operator';
+  text: string;
+  timestamp: string;
+}
+
+interface ChatSession {
+  clientUid: string;
+  clientName: string;
+  messages: Message[];
+  assistantActive: boolean;
+  lastMessageAt: string;
+  unreadByOperator?: boolean;
+}
+
+interface ClientSupportChatProps {
+  isFloating?: boolean;
+  onClose?: () => void;
+}
+
+export const ClientSupportChat = ({ isFloating = false, onClose }: ClientSupportChatProps) => {
+  const { user, userData } = useAuth();
+
+  const getVisitorId = () => {
+    let id = sessionStorage.getItem('donalu_visitor_id');
+    if (!id) {
+      id = Math.random().toString(36).substring(2, 11);
+      sessionStorage.setItem('donalu_visitor_id', id);
+    }
+    return id;
+  };
+
+  const clientUid = user?.uid || 'visitante_' + getVisitorId();
+  const clientName = user?.displayName || userData?.name || 'Cliente Visitante';
+
+  const [chat, setChat] = useState<ChatSession | null>(null);
+  const [inputText, setInputText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [aiResponding, setAiResponding] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 1. Listen to client chat in Firestore
+  useEffect(() => {
+    const docRef = doc(db, 'support_chats', clientUid);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setChat(docSnap.data() as ChatSession);
+      } else {
+        setChat({
+          clientUid,
+          clientName,
+          messages: [
+            {
+              sender: 'assistant',
+              text: 'Oi! Tudo bem? Como posso te ajudar? Vai um pastelzinho hoje? 🥟😋',
+              timestamp: new Date().toISOString()
+            }
+          ],
+          assistantActive: true,
+          lastMessageAt: new Date().toISOString()
+        });
+      }
+    }, (err) => {
+      console.error('Erro ao escutar chat de suporte:', err);
+    });
+
+    return () => unsubscribe();
+  }, [clientUid, clientName]);
+
+  // 2. Auto-scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chat?.messages]);
+
+  // 3. AI response trigger
+  const triggerAiResponse = async (chatHistory: Message[], newClientMessage: string) => {
+    setAiResponding(true);
+    try {
+      // Helper normalization function
+      const normalizeText = (text: string) => {
+        return text
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^\w\s]/gi, '')
+          .trim();
+      };
+
+      // Fetch custom rules from Firestore
+      const rulesSnap = await getDocs(collection(db, 'ai_rules'));
+      const rulesList: any[] = [];
+      rulesSnap.forEach(d => rulesList.push(d.data()));
+
+      // Try to find a direct match
+      const normalizedInput = normalizeText(newClientMessage);
+      let matchedRule = null;
+      for (const rule of rulesList) {
+        const normalizedPattern = normalizeText(rule.pattern || '');
+        if (normalizedPattern && (normalizedInput.includes(normalizedPattern) || normalizedPattern.includes(normalizedInput))) {
+          matchedRule = rule;
+          break;
+        }
+      }
+
+      // Load AI config
+      const configRef = doc(db, 'settings', 'ai_assistant_config');
+      const configSnap = await getDoc(configRef);
+      const aiConfig = configSnap.exists() ? configSnap.data() : {
+        assistantName: 'Dona Lu Assistente',
+        aiInstructions: 'Seja um assistente virtual atencioso e simpático para a Dona Lu Pastelaria.',
+        aiRestrictions: 'Não dê descontos sem aprovação, não fale sobre concorrentes.',
+        geminiApiKey: ''
+      };
+
+      // Load products
+      const productsSnap = await getDocs(collection(db, 'products'));
+      const productsList: any[] = [];
+      productsSnap.forEach(d => productsList.push(d.data()));
+      const availableItems = productsList.filter(p => p.stock === undefined || Number(p.stock) > 0);
+      const outOfStockItems = productsList.filter(p => p.stock !== undefined && Number(p.stock) <= 0);
+
+      // Load recent orders for logged-in client
+      let recentOrdersStr = 'Nenhum pedido recente encontrado.';
+      if (user?.uid) {
+        try {
+          const ordersRef = collection(db, 'orders');
+          const q = query(ordersRef, where('clientUid', '==', user.uid));
+          const ordersSnap = await getDocs(q);
+          const clientOrders: any[] = [];
+          ordersSnap.forEach(d => clientOrders.push(d.data()));
+          clientOrders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          if (clientOrders.length > 0) {
+            const lastOrder = clientOrders[0];
+            const statusLabels: Record<string, string> = {
+              pending: 'Aguardando aprovação do caixa',
+              preparing: 'Sendo preparado na cozinha',
+              ready: 'Pronto para entrega ou retirada',
+              delivering: 'Em trânsito com o entregador',
+              completed: 'Entregue / Concluído',
+              cancelled: 'Cancelado',
+              awaiting_payment: 'Aguardando confirmação do pagamento'
+            };
+            const itemsStr = lastOrder.items?.map((i: any) => `${i.quantity}x ${i.name}`).join(', ') || '';
+            recentOrdersStr = `Pedido mais recente:\n- Status: ${statusLabels[lastOrder.status] || lastOrder.status}\n- Itens: ${itemsStr}\n- Total: R$ ${lastOrder.total?.toFixed(2).replace('.', ',')}`;
+          }
+        } catch (_) {
+          // ignore orders fetch error
+        }
+      }
+
+      let replyText = '';
+
+      // Try Gemini API if key exists and no direct rule matched
+      if (aiConfig.geminiApiKey && aiConfig.geminiApiKey.trim() !== '') {
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiConfig.geminiApiKey}`;
+
+          // Inject custom rules into system prompt for Gemini to guide it
+          const customRulesPrompt = rulesList.length > 0 
+            ? `\nDIRETRIZES E CORREÇÕES ENSINADAS (Siga e integre estas correções de forma natural e simpática se a conversa tocar nesses assuntos):\n${rulesList.map(r => `- Se perguntar algo similar a "${r.pattern}": sua resposta deve se alinhar com "${r.response}"`).join('\n')}` 
+            : '';
+
+          const systemPrompt = `Você é "${aiConfig.assistantName || 'Dona Lu Assistente'}", atendente virtual da Dona Lu Pastelaria.
+Instruções: ${aiConfig.aiInstructions}
+Restrições: ${aiConfig.aiRestrictions}${customRulesPrompt}
+
+ESTABELECIMENTO:
+- Rua Jícara, 239 - Campo Grande, RJ | Tel: (21) 3439-5241
+- Horário: Terça a domingo, 18h às 23h30
+
+PRODUTOS DISPONÍVEIS:
+${availableItems.map(p => `- ${p.name} (R$ ${p.price?.toFixed(2)})`).join('\n')}
+
+${outOfStockItems.length > 0 ? `ESGOTADOS: ${outOfStockItems.map(p => p.name).join(', ')}` : ''}
+
+PEDIDO DO CLIENTE: ${recentOrdersStr}
+
+Responda de forma extremamente curta e natural, como um atendente humano no WhatsApp. Não se apresente como robô ou I.A. Use emojis com moderação. Máximo 2 frases.`;
+
+          const formattedHistory = chatHistory.slice(-4).map(m => `${m.sender === 'client' ? 'Cliente' : 'Atendente'}: ${m.text}`).join('\n');
+          const prompt = `${systemPrompt}\n\nConversa:\n${formattedHistory}\n\nCliente: "${newClientMessage}"\n\nResponda:`;
+
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+
+          const response = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeout);
+
+          if (response.ok) {
+            const resJson = await response.json();
+            replyText = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          } else {
+            console.warn('Gemini API retornou erro, usando fallback local.');
+          }
+        } catch (geminiError) {
+          console.warn('Gemini API falhou (rede/timeout/CORS), usando fallback local:', geminiError);
+        }
+      }
+
+      // Local rules engine fallback
+      if (!replyText) {
+        if (matchedRule) {
+          replyText = matchedRule.response;
+        } else {
+          const msg = newClientMessage.toLowerCase();
+        if (msg.includes('pedido') || msg.includes('status') || msg.includes('onde') || msg.includes('rastreio')) {
+          replyText = recentOrdersStr === 'Nenhum pedido recente encontrado.'
+            ? 'Não encontrei pedidos recentes na sua conta. Fez o pedido por aqui? 🤔'
+            : `Olha aqui:\n${recentOrdersStr}`;
+        } else if (msg.includes('cardapio') || msg.includes('cardápio') || msg.includes('sabores') || msg.includes('tem de que')) {
+          const names = availableItems.slice(0, 5).map(p => p.name).join(', ');
+          replyText = `Temos ${names} e muito mais! 😋 Veja tudo no Cardápio Digital no menu lateral.`;
+        } else if (msg.includes('esgotado') || msg.includes('acabou') || msg.includes('indisponivel') || msg.includes('tem estoque')) {
+          replyText = outOfStockItems.length > 0
+            ? `No momento só falta ${outOfStockItems.map(p => p.name).join(', ')}. O restante tá saindo! 😉`
+            : 'Tudo disponível! Pode pedir sem medo. 🥟';
+        } else if (msg.includes('horario') || msg.includes('horário') || msg.includes('abre') || msg.includes('fecha') || msg.includes('funcionamento')) {
+          replyText = 'Abrimos de terça a domingo das 18h às 23h30! 🕕';
+        } else if (msg.includes('endereco') || msg.includes('endereço') || msg.includes('onde fica') || msg.includes('localizacao')) {
+          replyText = 'Rua Jícara, 239 - Campo Grande, RJ. Fazemos entrega na região! 📍';
+        } else if (msg.includes('entrega') || msg.includes('delivery') || msg.includes('taxa')) {
+          replyText = 'Sim, estamos entregando! 🛵 Informe seu endereço no Cardápio Digital pra ver a taxa.';
+        } else if (msg.includes('oi') || msg.includes('olá') || msg.includes('ola') || msg.includes('bom dia') || msg.includes('boa tarde') || msg.includes('boa noite')) {
+          replyText = 'Oi! Tudo bem? Vai um pastelzinho hoje? 🥟😋';
+        } else {
+          replyText = 'Como posso te ajudar? 😊';
+        }
+        }
+      }
+
+      // Save AI reply to Firestore
+      const docRef = doc(db, 'support_chats', clientUid);
+      const updatedMessages = [
+        ...chatHistory,
+        {
+          sender: 'assistant' as const,
+          text: replyText,
+          timestamp: new Date().toISOString()
+        }
+      ];
+
+      await setDoc(docRef, {
+        clientUid,
+        clientName,
+        messages: updatedMessages,
+        assistantActive: true,
+        lastMessageAt: new Date().toISOString(),
+        unreadByOperator: true
+      });
+
+    } catch (err) {
+      console.error('Erro ao gerar resposta da I.A.:', err);
+    } finally {
+      setAiResponding(false);
+    }
+  };
+
+  // 4. Send client message
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || sending) return;
+
+    setSending(true);
+    const newMsgText = inputText.trim();
+    setInputText('');
+
+    try {
+      const docRef = doc(db, 'support_chats', clientUid);
+      const currentMessages = chat?.messages || [];
+      const clientMessage: Message = {
+        sender: 'client',
+        text: newMsgText,
+        timestamp: new Date().toISOString()
+      };
+      const updatedMessages = [...currentMessages, clientMessage];
+      const isAssistantActive = chat ? chat.assistantActive : true;
+
+      await setDoc(docRef, {
+        clientUid,
+        clientName,
+        messages: updatedMessages,
+        assistantActive: isAssistantActive,
+        lastMessageAt: new Date().toISOString(),
+        unreadByOperator: true
+      });
+
+      if (isAssistantActive) {
+        setTimeout(() => {
+          triggerAiResponse(updatedMessages, newMsgText);
+        }, 800);
+      }
+    } catch (err) {
+      console.error('Erro ao enviar mensagem:', err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: isFloating ? '400px' : 'calc(100vh - 200px)',
+      minHeight: isFloating ? '380px' : '480px',
+      background: 'var(--card-bg, #0f172a)',
+      borderRadius: isFloating ? '16px' : '12px',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      overflow: 'hidden',
+      boxShadow: isFloating ? '0 12px 30px rgba(0,0,0,0.5)' : 'none'
+    }}>
+
+      {/* Header */}
+      <div style={{
+        padding: '0.75rem 1rem',
+        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            background: chat?.assistantActive ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: `1px solid ${chat?.assistantActive ? 'var(--primary-gold)' : '#10b981'}`
+          }}>
+            {chat?.assistantActive
+              ? <Bot size={16} style={{ color: 'var(--primary-gold)' }} />
+              : <User size={16} style={{ color: '#10b981' }} />}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff' }}>
+              {chat?.assistantActive ? 'Dona Lu Pastelaria 🥟' : 'Atendimento Humano 👨‍🍳'}
+            </span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+              {chat?.assistantActive ? 'Respostas rápidas' : 'Operador conectado'}
+            </span>
+          </div>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem' }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '1rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
+        background: 'rgba(0,0,0,0.15)'
+      }}>
+        {chat?.messages.map((msg, index) => {
+          const isClient = msg.sender === 'client';
+          const isAI = msg.sender === 'assistant';
+          return (
+            <div
+              key={index}
+              style={{
+                display: 'flex',
+                justifyContent: isClient ? 'flex-end' : 'flex-start',
+                width: '100%'
+              }}
+            >
+              <div style={{
+                maxWidth: '80%',
+                padding: '0.65rem 0.85rem',
+                borderRadius: isClient ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
+                background: isClient
+                  ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                  : (isAI ? 'rgba(255, 255, 255, 0.05)' : 'rgba(16, 185, 129, 0.1)'),
+                border: isClient
+                  ? 'none'
+                  : (isAI ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(16,185,129,0.2)'),
+                color: isClient ? '#000' : '#fff',
+                fontSize: '0.85rem',
+                lineHeight: '1.4',
+                textAlign: 'left',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ fontSize: '0.65rem', color: isClient ? 'rgba(0,0,0,0.5)' : 'var(--text-secondary)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  {isClient ? <User size={10} /> : (isAI ? <Bot size={10} /> : <User size={10} />)}
+                  {isClient ? 'Você' : (isAI ? 'Atendente' : 'Atendente Humano')}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', fontWeight: isClient ? 500 : 400 }}>
+                  {msg.text}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {aiResponding && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start', width: '100%' }}>
+            <div style={{
+              padding: '0.5rem 0.85rem',
+              borderRadius: '12px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255,255,255,0.05)',
+              color: 'var(--text-secondary)',
+              fontSize: '0.78rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <span className="spinner" style={{ width: '12px', height: '12px', borderWidth: '1.5px' }} />
+              digitando...
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <form onSubmit={handleSendMessage} style={{
+        padding: '0.75rem',
+        background: '#0f172a',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        display: 'flex',
+        gap: '0.5rem'
+      }}>
+        <input
+          type="text"
+          placeholder="Digite uma mensagem..."
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          disabled={sending}
+          style={{
+            flex: 1,
+            padding: '0.55rem 0.75rem',
+            background: 'rgba(0, 0, 0, 0.3)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '8px',
+            color: '#fff',
+            fontSize: '0.85rem',
+            outline: 'none',
+            transition: 'border-color 0.2s'
+          }}
+        />
+        <button
+          type="submit"
+          disabled={!inputText.trim() || sending}
+          style={{
+            background: inputText.trim() ? 'var(--primary-gold)' : 'rgba(255,255,255,0.05)',
+            color: inputText.trim() ? '#000' : 'var(--text-secondary)',
+            border: 'none',
+            borderRadius: '8px',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: inputText.trim() ? 'pointer' : 'default',
+            transition: 'background 0.2s, color 0.2s'
+          }}
+        >
+          <Send size={16} />
+        </button>
+      </form>
+    </div>
+  );
+};
