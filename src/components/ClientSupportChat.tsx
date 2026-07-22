@@ -92,6 +92,52 @@ export const ClientSupportChat = ({ isFloating = false, onClose }: ClientSupport
           .trim();
       };
 
+      // Failsafe: parses instructional training rules into friendly conversational responses
+      const parseInstructionalResponse = (instruction: string, clientMsg: string): string => {
+        const instLower = instruction.toLowerCase().trim();
+        const msgLower = clientMsg.toLowerCase().trim();
+
+        // 1. Detect greeting instructions
+        if (instLower.includes('bom dia') || instLower.includes('boa tarde') || instLower.includes('boa noite') || instLower.includes('retribua') || instLower.includes('cumprimente')) {
+          if (msgLower.includes('boa noite')) return 'Boa noite! Tudo bem? 🥟😋 Como posso te ajudar?';
+          if (msgLower.includes('boa tarde')) return 'Boa tarde! Tudo bem? 🥟😋 Como posso te ajudar?';
+          if (msgLower.includes('bom dia')) return 'Bom dia! Tudo bem? 🥟😋 Como posso te ajudar?';
+          if (msgLower.includes('oi') || msgLower.includes('ola') || msgLower.includes('olá') || msgLower.includes('tudo bem')) {
+            return 'Oi! Tudo bem? Vai um pastelzinho hoje? 🥟😋 Como posso te ajudar?';
+          }
+        }
+
+        // 2. Strip prefix instructions
+        const prefixes = [
+          /^(diga|fale|responda|informe|explique|avise)\s+que\s+/i,
+          /^(diga|fale|responda|informe|explique|avise)\s+para\s+o\s+cliente\s+que\s+/i,
+          /^(diga|fale|responda|informe|explique|avise)\s+ao\s+cliente\s+que\s+/i,
+          /^(diga|fale|responda|informe|explique|avise)\s+/i,
+          /^retribua\s+/i,
+          /^caso\s+o\s+cliente\s+.*,\s*(responda|diga|fale|retribua)\s+/i
+        ];
+
+        let cleaned = instruction;
+        for (const pattern of prefixes) {
+          if (pattern.test(cleaned)) {
+            cleaned = cleaned.replace(pattern, '');
+            cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+            break;
+          }
+        }
+
+        if (cleaned !== instruction) {
+          return cleaned;
+        }
+
+        // 3. Structural rule fallback
+        if (instLower.startsWith('caso o cliente') || instLower.startsWith('se o cliente') || instLower.includes('instrua') || instLower.includes('atendente deve')) {
+          return 'Olá! Tudo bem? 🥟 Como posso te ajudar hoje? Se quiser ver os sabores e preços, acesse o Cardápio Digital no menu lateral!';
+        }
+
+        return instruction;
+      };
+
       // Fetch custom rules from Firestore
       const rulesSnap = await getDocs(collection(db, 'ai_rules'));
       const rulesList: any[] = [];
@@ -163,7 +209,7 @@ export const ClientSupportChat = ({ isFloating = false, onClose }: ClientSupport
 
           // Inject custom rules into system prompt for Gemini to guide it
           const customRulesPrompt = rulesList.length > 0 
-            ? `\nDIRETRIZES E CORREÇÕES ENSINADAS (Siga e integre estas correções de forma natural e simpática se a conversa tocar nesses assuntos):\n${rulesList.map(r => `- Se perguntar algo similar a "${r.pattern}": sua resposta deve se alinhar com "${r.response}"`).join('\n')}` 
+            ? `\nDIRETRIZES E INSTRUÇÕES ENSINADAS (Siga estas diretrizes de forma estrita e inteligente, executando as instruções na resposta em vez de repeti-las para o cliente):\n${rulesList.map(r => `- Diretriz para "${r.pattern}": ${r.response}`).join('\n')}` 
             : '';
 
           const systemPrompt = `Você é "${aiConfig.assistantName || 'Dona Lu Assistente'}", atendente virtual da Dona Lu Pastelaria.
@@ -212,49 +258,6 @@ Responda de forma extremamente curta e natural, como um atendente humano no What
       // Local rules engine fallback
       if (!replyText) {
         if (matchedRule) {
-          // Process instructional rules to return a clean natural response instead of literal rules
-          const parseInstructionalResponse = (instruction: string, clientMsg: string): string => {
-            const instLower = instruction.toLowerCase().trim();
-            const msgLower = clientMsg.toLowerCase().trim();
-
-            if (instLower.includes('bom dia') || instLower.includes('boa tarde') || instLower.includes('boa noite') || instLower.includes('retribua') || instLower.includes('cumprimente')) {
-              if (msgLower.includes('boa noite')) return 'Boa noite! Tudo bem? 🥟😋 Como posso te ajudar?';
-              if (msgLower.includes('boa tarde')) return 'Boa tarde! Tudo bem? 🥟😋 Como posso te ajudar?';
-              if (msgLower.includes('bom dia')) return 'Bom dia! Tudo bem? 🥟😋 Como posso te ajudar?';
-              if (msgLower.includes('oi') || msgLower.includes('ola') || msgLower.includes('olá') || msgLower.includes('tudo bem')) {
-                return 'Oi! Tudo bem? Vai um pastelzinho hoje? 🥟😋 Como posso te ajudar?';
-              }
-            }
-
-            const prefixes = [
-              /^(diga|fale|responda|informe|explique|avise)\s+que\s+/i,
-              /^(diga|fale|responda|informe|explique|avise)\s+para\s+o\s+cliente\s+que\s+/i,
-              /^(diga|fale|responda|informe|explique|avise)\s+ao\s+cliente\s+que\s+/i,
-              /^(diga|fale|responda|informe|explique|avise)\s+/i,
-              /^retribua\s+/i,
-              /^caso\s+o\s+cliente\s+.*,\s*(responda|diga|fale|retribua)\s+/i
-            ];
-
-            let cleaned = instruction;
-            for (const pattern of prefixes) {
-              if (pattern.test(cleaned)) {
-                cleaned = cleaned.replace(pattern, '');
-                cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-                break;
-              }
-            }
-
-            if (cleaned !== instruction) {
-              return cleaned;
-            }
-
-            if (instLower.startsWith('caso o cliente') || instLower.startsWith('se o cliente') || instLower.includes('instrua') || instLower.includes('atendente deve')) {
-              return 'Olá! Tudo bem? 🥟 Como posso te ajudar hoje? Se quiser ver os sabores e preços, acesse o Cardápio Digital no menu lateral!';
-            }
-
-            return instruction;
-          };
-
           replyText = parseInstructionalResponse(matchedRule.response, newClientMessage);
         } else {
           const msg = newClientMessage.toLowerCase();
@@ -295,6 +298,9 @@ Responda de forma extremamente curta e natural, como um atendente humano no What
           }
         }
       }
+
+      // Clean up response if it contains raw instruction/directive text (failsafe)
+      replyText = parseInstructionalResponse(replyText, newClientMessage);
 
       // Save AI reply to Firestore
       const docRef = doc(db, 'support_chats', clientUid);
