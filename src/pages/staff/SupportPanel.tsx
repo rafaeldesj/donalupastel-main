@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { MessageSquare, Bot, User, Send, Settings, Save, AlertCircle, Play, Pause, Check, Trash2, GraduationCap } from 'lucide-react';
+import { MessageSquare, Bot, User, Send, Settings, Save, AlertCircle, Play, Pause, Check, Trash2, GraduationCap, ChevronLeft } from 'lucide-react';
 
 interface Message {
   sender: 'client' | 'assistant' | 'operator';
@@ -30,6 +30,14 @@ export const SupportPanel = () => {
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [activeTab, setActiveTab] = useState<'chats' | 'treinamento'>('chats');
+  
+  // Detect mobile screen width dynamically
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Custom quick training rules states
   const [customRules, setCustomRules] = useState<any[]>([]);
@@ -286,297 +294,329 @@ export const SupportPanel = () => {
         <div style={{
           display: 'flex',
           flex: 1,
-          gap: '1rem',
+          gap: isMobile ? '0' : '1rem',
           minHeight: 0, // Allows flex-child scrolling
-          overflow: 'hidden'
+          overflow: 'hidden',
+          flexDirection: isMobile ? 'column' : 'row'
         }}>
           
           {/* Chat Sessions list (Left side) */}
-          <div style={{
-            flex: '0 0 280px',
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            overflowY: 'auto'
-          }}>
-            <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              Fila de Clientes ({activeChats.length})
-            </div>
-            
-            {activeChats.length === 0 ? (
-              <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                Nenhuma conversa iniciada.
+          {(!isMobile || !selectedChatId) && (
+            <div style={{
+              flex: isMobile ? '1' : '0 0 280px',
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              overflowY: 'auto',
+              width: isMobile ? '100%' : 'auto'
+            }}>
+              <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Fila de Clientes ({activeChats.length})
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {activeChats.map((c) => {
-                  const isSelected = selectedChatId === c.clientUid;
-                  const lastMsg = c.messages[c.messages.length - 1];
-
-                  return (
-                    <button
-                      key={c.clientUid}
-                      onClick={() => setSelectedChatId(c.clientUid)}
-                      style={{
-                        padding: '0.85rem 1rem',
-                        border: 'none',
-                        borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
-                        background: isSelected ? 'rgba(245, 158, 11, 0.08)' : 'transparent',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        gap: '0.25rem',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        width: '100%',
-                        transition: 'background 0.2s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>
-                          {c.clientName}
-                        </span>
-                        {c.unreadByOperator && (
-                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
-                        )}
-                      </div>
-                      
-                      {lastMsg && (
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
-                          {lastMsg.sender === 'client' ? 'Cliente: ' : (lastMsg.sender === 'assistant' ? 'I.A.: ' : 'Operador: ')} {lastMsg.text}
-                        </span>
-                      )}
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '0.25rem', alignItems: 'center' }}>
-                        <span style={{
-                          fontSize: '0.7rem',
-                          background: c.assistantActive ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                          color: c.assistantActive ? 'var(--primary-gold)' : '#10b981',
-                          padding: '0.1rem 0.35rem',
-                          borderRadius: '4px',
-                          border: `1px solid ${c.assistantActive ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'}`
-                        }}>
-                          {c.assistantActive ? 'I.A. Ativa' : 'Humano'}
-                        </span>
-                        
-                        <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
-                          {new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Active conversation window (Right side) */}
-          <div style={{
-            flex: 1,
-            background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            borderRadius: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-            overflow: 'hidden'
-          }}>
-            {selectedChat ? (
-              <>
-                {/* Header of Chat */}
-                <div style={{
-                  padding: '0.75rem 1.25rem',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background: 'rgba(255,255,255,0.01)'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                    <span style={{ fontWeight: 600, color: '#fff', fontSize: '1rem' }}>
-                      {selectedChat.clientName}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      ID do Cliente: {selectedChat.clientUid}
-                    </span>
-                  </div>
-
-                  {/* AI intervention controls */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => toggleAssistantState(selectedChat)}
-                      style={{
-                        padding: '0.4rem 0.8rem',
-                        borderRadius: '6px',
-                        border: 'none',
-                        background: selectedChat.assistantActive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                        color: selectedChat.assistantActive ? '#f87171' : 'var(--primary-gold)',
-                        cursor: 'pointer',
-                        fontSize: '0.78rem',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        transition: 'background 0.2s'
-                      }}
-                    >
-                      {selectedChat.assistantActive ? (
-                        <>
-                          <Pause size={14} />
-                          Pausar I.A. (Intervir)
-                        </>
-                      ) : (
-                        <>
-                          <Play size={14} />
-                          Ligar I.A. Chatbot
-                        </>
-                      )}
-                    </button>
-                  </div>
+              
+              {activeChats.length === 0 ? (
+                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  Nenhuma conversa iniciada.
                 </div>
-
-                {/* Messages Feed */}
-                <div style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '1rem 1.25rem',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.75rem',
-                  background: 'rgba(0,0,0,0.1)'
-                }}>
-                  {selectedChat.messages.map((m, index) => {
-                    const isClient = m.sender === 'client';
-                    const isAI = m.sender === 'assistant';
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {activeChats.map((c) => {
+                    const isSelected = selectedChatId === c.clientUid;
+                    const lastMsg = c.messages[c.messages.length - 1];
 
                     return (
-                      <div
-                        key={index}
+                      <button
+                        key={c.clientUid}
+                        onClick={() => setSelectedChatId(c.clientUid)}
                         style={{
+                          padding: '0.85rem 1rem',
+                          border: 'none',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                          background: isSelected ? 'rgba(245, 158, 11, 0.08)' : 'transparent',
                           display: 'flex',
-                          justifyContent: isClient ? 'flex-start' : 'flex-end',
-                          alignItems: 'center',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: '0.25rem',
+                          cursor: 'pointer',
+                          textAlign: 'left',
                           width: '100%',
-                          gap: '0.5rem'
+                          transition: 'background 0.2s'
                         }}
                       >
-                        {/* Se for operador e for à direita, não precisa de botão aqui */}
-                        {!isClient && (
-                          <div style={{ flex: 1 }} />
-                        )}
-                        <div style={{
-                          maxWidth: '75%',
-                          padding: '0.65rem 0.85rem',
-                          borderRadius: isClient ? '14px 14px 14px 2px' : '14px 14px 2px 14px',
-                          background: isClient 
-                            ? 'rgba(255, 255, 255, 0.04)' 
-                            : (isAI ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'),
-                          border: isClient 
-                            ? '1px solid rgba(255,255,255,0.06)' 
-                            : (isAI ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(16,185,129,0.2)'),
-                          color: '#fff',
-                          fontSize: '0.85rem',
-                          lineHeight: '1.4',
-                          textAlign: 'left'
-                        }}>
-                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                            {isClient ? <User size={10} /> : (isAI ? <Bot size={10} /> : <User size={10} />)}
-                            {isClient ? 'Cliente' : (isAI ? `Atendente Virtual (I.A.)` : `Você (Operador Humano)`)}
-                          </div>
-                          <div style={{ whiteSpace: 'pre-wrap' }}>
-                            {m.text}
-                          </div>
-                          <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '0.2rem' }}>
-                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, color: '#fff', fontSize: '0.88rem' }}>
+                            {c.clientName}
+                          </span>
+                          {c.unreadByOperator && (
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
+                          )}
                         </div>
-                        {isClient && (
-                          <button
-                            onClick={() => startQuickTraining(m.text)}
-                            title="Ensinar I.A. a responder isso"
-                            style={{
-                              background: 'rgba(245, 158, 11, 0.1)',
-                              border: '1px solid rgba(245, 158, 11, 0.2)',
-                              color: 'var(--primary-gold)',
-                              borderRadius: '50%',
-                              width: '28px',
-                              height: '28px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              flexShrink: 0,
-                              opacity: 0.7,
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
-                          >
-                            <GraduationCap size={14} />
-                          </button>
+                        
+                        {lastMsg && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                            {lastMsg.sender === 'client' ? 'Cliente: ' : (lastMsg.sender === 'assistant' ? 'I.A.: ' : 'Operador: ')} {lastMsg.text}
+                          </span>
                         )}
-                        {isClient && <div style={{ flex: 1 }} />}
-                      </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '0.25rem', alignItems: 'center' }}>
+                          <span style={{
+                            fontSize: '0.7rem',
+                            background: c.assistantActive ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                            color: c.assistantActive ? 'var(--primary-gold)' : '#10b981',
+                            padding: '0.1rem 0.35rem',
+                            borderRadius: '4px',
+                            border: `1px solid ${c.assistantActive ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)'}`
+                          }}>
+                            {c.assistantActive ? 'I.A. Ativa' : 'Humano'}
+                          </span>
+                          
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                            {new Date(c.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </button>
                     );
                   })}
-                  <div ref={messagesEndRef} />
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* Operator reply input box */}
-                <form onSubmit={handleSendOperatorMessage} style={{
-                  padding: '1rem',
-                  borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                  display: 'flex',
-                  gap: '0.5rem',
-                  background: 'rgba(255,255,255,0.01)'
-                }}>
-                  <input
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder={selectedChat.assistantActive ? "Digite para intervir e responder diretamente (isso pausará a I.A.)..." : "Digite para responder ao cliente..."}
-                    style={{
-                      flex: 1,
-                      padding: '0.65rem 1rem',
-                      background: 'rgba(0, 0, 0, 0.3)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '0.88rem',
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!inputText.trim()}
-                    style={{
-                      background: inputText.trim() ? 'var(--primary-gold)' : 'rgba(255,255,255,0.04)',
-                      color: inputText.trim() ? '#000' : 'var(--text-secondary)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      padding: '0 1rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: inputText.trim() ? 'pointer' : 'default',
-                      fontWeight: 600,
-                      gap: '0.35rem'
-                    }}
-                  >
-                    <Send size={16} />
-                    Enviar
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '0.5rem', color: 'var(--text-secondary)' }}>
-                <MessageSquare size={36} />
-                <span>Selecione uma conversa para começar o atendimento</span>
-              </div>
-            )}
-          </div>
+          {/* Active conversation window (Right side) */}
+          {(!isMobile || selectedChatId) && (
+            <div style={{
+              flex: 1,
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '12px',
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              overflow: 'hidden',
+              width: isMobile ? '100%' : 'auto'
+            }}>
+              {selectedChat ? (
+                <>
+                  {/* Header of Chat */}
+                  <div style={{
+                    padding: '0.75rem 1.25rem',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.01)',
+                    gap: '0.5rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      {isMobile && (
+                        <button
+                          onClick={() => setSelectedChatId(null)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '6px',
+                            color: '#fff',
+                            padding: '0.4rem 0.6rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            transition: 'background 0.2s'
+                          }}
+                        >
+                          <ChevronLeft size={16} />
+                          Voltar
+                        </button>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '1rem' }}>
+                          {selectedChat.clientName}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                          ID: {selectedChat.clientUid}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* AI intervention controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => toggleAssistantState(selectedChat)}
+                        style={{
+                          padding: '0.4rem 0.8rem',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: selectedChat.assistantActive ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                          color: selectedChat.assistantActive ? '#f87171' : 'var(--primary-gold)',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          transition: 'background 0.2s'
+                        }}
+                      >
+                        {selectedChat.assistantActive ? (
+                          <>
+                            <Pause size={14} />
+                            {isMobile ? 'Pausar I.A.' : 'Pausar I.A. (Intervir)'}
+                          </>
+                        ) : (
+                          <>
+                            <Play size={14} />
+                            {isMobile ? 'Ligar I.A.' : 'Ligar I.A. Chatbot'}
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Messages Feed */}
+                  <div style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '1rem 1.25rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    background: 'rgba(0,0,0,0.1)'
+                  }}>
+                    {selectedChat.messages.map((m, index) => {
+                      const isClient = m.sender === 'client';
+                      const isAI = m.sender === 'assistant';
+
+                      return (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            justifyContent: isClient ? 'flex-start' : 'flex-end',
+                            alignItems: 'center',
+                            width: '100%',
+                            gap: '0.5rem'
+                          }}
+                        >
+                          {/* Se for operador e for à direita, não precisa de botão aqui */}
+                          {!isClient && (
+                            <div style={{ flex: 1 }} />
+                          )}
+                          <div style={{
+                            maxWidth: '75%',
+                            padding: '0.65rem 0.85rem',
+                            borderRadius: isClient ? '14px 14px 14px 2px' : '14px 14px 2px 14px',
+                            background: isClient 
+                              ? 'rgba(255, 255, 255, 0.04)' 
+                              : (isAI ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)'),
+                            border: isClient 
+                              ? '1px solid rgba(255,255,255,0.06)' 
+                              : (isAI ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(16,185,129,0.2)'),
+                            color: '#fff',
+                            fontSize: '0.85rem',
+                            lineHeight: '1.4',
+                            textAlign: 'left'
+                          }}>
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {isClient ? <User size={10} /> : (isAI ? <Bot size={10} /> : <User size={10} />)}
+                              {isClient ? 'Cliente' : (isAI ? `Atendente Virtual (I.A.)` : `Você (Operador Humano)`)}
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>
+                              {m.text}
+                            </div>
+                            <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '0.2rem' }}>
+                              {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          {isClient && (
+                            <button
+                              onClick={() => startQuickTraining(m.text)}
+                              title="Ensinar I.A. a responder isso"
+                              style={{
+                                background: 'rgba(245, 158, 11, 0.1)',
+                                border: '1px solid rgba(245, 158, 11, 0.2)',
+                                color: 'var(--primary-gold)',
+                                borderRadius: '50%',
+                                width: '28px',
+                                height: '28px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                                opacity: 0.7,
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+                            >
+                              <GraduationCap size={14} />
+                            </button>
+                          )}
+                          {isClient && <div style={{ flex: 1 }} />}
+                        </div>
+                      );
+                    })}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {/* Operator reply input box */}
+                  <form onSubmit={handleSendOperatorMessage} style={{
+                    padding: '1rem',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                    display: 'flex',
+                    gap: '0.5rem',
+                    background: 'rgba(255,255,255,0.01)'
+                  }}>
+                    <input
+                      type="text"
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder={selectedChat.assistantActive ? "Digite para intervir e responder diretamente (isso pausará a I.A.)..." : "Digite para responder ao cliente..."}
+                      style={{
+                        flex: 1,
+                        padding: '0.65rem 1rem',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        fontSize: '0.88rem',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!inputText.trim()}
+                      style={{
+                        background: inputText.trim() ? 'var(--primary-gold)' : 'rgba(255,255,255,0.04)',
+                        color: inputText.trim() ? '#000' : 'var(--text-secondary)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '0 1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: inputText.trim() ? 'pointer' : 'default',
+                        fontWeight: 600,
+                        gap: '0.35rem'
+                      }}
+                    >
+                      <Send size={16} />
+                      Enviar
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '0.5rem', color: 'var(--text-secondary)' }}>
+                  <MessageSquare size={36} />
+                  <span>Selecione uma conversa para começar o atendimento</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         /* Training & Prompts configuration tab (treinamento) */
