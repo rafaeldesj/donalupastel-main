@@ -215,28 +215,41 @@ Responda de forma extremamente curta e natural, como um atendente humano no What
           replyText = matchedRule.response;
         } else {
           const msg = newClientMessage.toLowerCase();
-        if (msg.includes('pedido') || msg.includes('status') || msg.includes('onde') || msg.includes('rastreio')) {
-          replyText = recentOrdersStr === 'Nenhum pedido recente encontrado.'
-            ? 'Não encontrei pedidos recentes na sua conta. Fez o pedido por aqui? 🤔'
-            : `Olha aqui:\n${recentOrdersStr}`;
-        } else if (msg.includes('cardapio') || msg.includes('cardápio') || msg.includes('sabores') || msg.includes('tem de que')) {
-          const names = availableItems.slice(0, 5).map(p => p.name).join(', ');
-          replyText = `Temos ${names} e muito mais! 😋 Veja tudo no Cardápio Digital no menu lateral.`;
-        } else if (msg.includes('esgotado') || msg.includes('acabou') || msg.includes('indisponivel') || msg.includes('tem estoque')) {
-          replyText = outOfStockItems.length > 0
-            ? `No momento só falta ${outOfStockItems.map(p => p.name).join(', ')}. O restante tá saindo! 😉`
-            : 'Tudo disponível! Pode pedir sem medo. 🥟';
-        } else if (msg.includes('horario') || msg.includes('horário') || msg.includes('abre') || msg.includes('fecha') || msg.includes('funcionamento')) {
-          replyText = 'Abrimos de terça a domingo das 18h às 23h30! 🕕';
-        } else if (msg.includes('endereco') || msg.includes('endereço') || msg.includes('onde fica') || msg.includes('localizacao')) {
-          replyText = 'Rua Jícara, 239 - Campo Grande, RJ. Fazemos entrega na região! 📍';
-        } else if (msg.includes('entrega') || msg.includes('delivery') || msg.includes('taxa')) {
-          replyText = 'Sim, estamos entregando! 🛵 Informe seu endereço no Cardápio Digital pra ver a taxa.';
-        } else if (msg.includes('oi') || msg.includes('olá') || msg.includes('ola') || msg.includes('bom dia') || msg.includes('boa tarde') || msg.includes('boa noite')) {
-          replyText = 'Oi! Tudo bem? Vai um pastelzinho hoje? 🥟😋';
-        } else {
-          replyText = 'Como posso te ajudar? 😊';
-        }
+          
+          if (msg.includes('pedido') || msg.includes('status') || msg.includes('onde') || msg.includes('rastreio')) {
+            replyText = recentOrdersStr === 'Nenhum pedido recente encontrado.'
+              ? 'Não encontrei pedidos recentes na sua conta. Fez o pedido por aqui? 🤔'
+              : `Olha aqui:\n${recentOrdersStr}`;
+          } else if (msg.includes('indica') || msg.includes('recomenda') || msg.includes('sugere') || msg.includes('sugestao') || msg.includes('sugestão') || msg.includes('melhor') || msg.includes('mais vendido') || msg.includes('dica')) {
+            const names = availableItems.slice(0, 3).map(p => p.name).join(', ');
+            replyText = names 
+              ? `Recomendo experimentar nossos deliciosos sabores: ${names}! São os mais pedidos por aqui. 😋 Se quiser ver mais detalhes, confira no Cardápio Digital.`
+              : 'Recomendo experimentar nosso tradicional Pastel de Carne com queijo ou nosso campeão de vendas! 😋 Dê uma olhada em todos os sabores no Cardápio Digital.';
+          } else if (msg.includes('cardapio') || msg.includes('cardápio') || msg.includes('sabores') || msg.includes('tem de que') || msg.includes('sabor') || msg.includes('recheio')) {
+            const names = availableItems.slice(0, 5).map(p => p.name).join(', ');
+            replyText = `Temos ${names || 'pastéis variados'} e muito mais! 😋 Você pode ver todo o cardápio e fazer seu pedido no Cardápio Digital no menu lateral.`;
+          } else if (msg.includes('preco') || msg.includes('preço') || msg.includes('valor') || msg.includes('valores') || msg.includes('quanto custa') || msg.includes('custa') || msg.includes('quanto e') || msg.includes('quanto é')) {
+            const minPrice = availableItems.reduce((min, p) => p.price < min ? p.price : min, availableItems[0]?.price || 10.00);
+            replyText = `Temos pastéis deliciosos a partir de R$ ${minPrice.toFixed(2).replace('.', ',')}! 💵 Confira os valores exatos de cada sabor no Cardápio Digital.`;
+          } else if (msg.includes('pagamento') || msg.includes('pagar') || msg.includes('cartao') || msg.includes('cartão') || msg.includes('pix') || msg.includes('dinheiro') || msg.includes('maquininha') || msg.includes('maquina')) {
+            replyText = 'Aceitamos PIX, cartão de crédito/débito online (pelo site) e também levamos a maquininha física ou recebemos em dinheiro na entrega! 💳';
+          } else if (msg.includes('esgotado') || msg.includes('acabou') || msg.includes('indisponivel') || msg.includes('tem estoque') || msg.includes('tem ainda')) {
+            replyText = outOfStockItems.length > 0
+              ? `No momento só falta ${outOfStockItems.map(p => p.name).join(', ')}. O restante está saindo fresquinho! 😉`
+              : 'Tudo disponível! Pode pedir sem medo no Cardápio Digital. 🥟';
+          } else if (msg.includes('horario') || msg.includes('horário') || msg.includes('abre') || msg.includes('fecha') || msg.includes('funcionamento') || msg.includes('aberto')) {
+            replyText = 'Abrimos de terça a domingo, das 18h às 23h30! Fora desse horário, você pode conferir o cardápio mas a loja estará fechada para pedidos. 🕕';
+          } else if (msg.includes('endereco') || msg.includes('endereço') || msg.includes('onde fica') || msg.includes('localizacao') || msg.includes('localização') || msg.includes('campo grande')) {
+            replyText = 'Ficamos na Rua Jícara, 239 - Campo Grande, RJ. Venha nos visitar ou faça seu pedido por aqui para entrega! 📍';
+          } else if (msg.includes('entrega') || msg.includes('delivery') || msg.includes('taxa') || msg.includes('frete')) {
+            replyText = 'Entregamos sim! 🛵 Informe seu endereço no Cardápio Digital para ver o valor da taxa de entrega e o tempo estimado para o seu bairro.';
+          } else if (msg.includes('obrigado') || msg.includes('obrigada') || msg.includes('valeu') || msg.includes('show') || msg.includes('obg') || msg.includes('tchau') || msg.includes('grato')) {
+            replyText = 'De nada! Estou aqui para ajudar. Se quiser pedir, é só acessar o Cardápio Digital. Bom apetite! 🥟😊';
+          } else if (msg.includes('oi') || msg.includes('olá') || msg.includes('ola') || msg.includes('bom dia') || msg.includes('boa tarde') || msg.includes('boa noite') || msg.includes('tudo bem')) {
+            replyText = 'Oi! Tudo bem? Vai um pastelzinho hoje? 🥟😋 Como posso te ajudar?';
+          } else {
+            replyText = 'Hum, não entendi muito bem sua dúvida. 😅 Se você quiser ver nossos pastéis e fazer seu pedido, acesse o Cardápio Digital! Mas se precisar de outra coisa, pode mandar aqui.';
+          }
         }
       }
 
