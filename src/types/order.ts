@@ -6,6 +6,7 @@ export interface OrderItem {
   price: number; // Numérico para cálculos
   quantity: number;
   category?: string;
+  size?: 'grande' | 'kids';
   withCatupiry?: boolean;
   withBorda?: boolean;
   ingredients?: string[];

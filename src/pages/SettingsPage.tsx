@@ -45,6 +45,11 @@ interface StoreConfig {
   disabledPaymentMethods?: string[];
   paymentMethodsThemes?: Record<string, 'light' | 'dark'>;
   requireCashierApproval?: boolean;
+  deliveryBaseKm?: number;
+  deliveryBaseFee?: number;
+  deliveryAdditionalKmFee?: number;
+  openDays?: (number | string)[];
+  disabledPaymentMethodsByOrderType?: Record<string, string[]>;
 }
 
 export const SettingsPage = () => {
@@ -52,6 +57,7 @@ export const SettingsPage = () => {
   
   // Tabs state: 'profile' (all) | 'store' (admin) | 'loyalty' (admin) | 'advanced' (dev) | 'audit_logs' (admin) | 'commissions' | 'security' | 'payments' | 'printer'
   const [activeTab, setActiveTab] = useState<'profile' | 'store' | 'loyalty' | 'advanced' | 'audit_logs' | 'commissions' | 'security' | 'mesas' | 'point_guide' | 'payments' | 'printer'>('profile');
+  const [selectedOrderTypeFilter, setSelectedOrderTypeFilter] = useState<'dine_in_table' | 'dine_in' | 'pickup' | 'delivery'>('delivery');
 
   // Printer config states
   const [printerSettings, setPrinterSettingsState] = useState<PrinterSettings>(() => getPrinterSettings());
@@ -162,7 +168,11 @@ export const SettingsPage = () => {
     openingTime: '18:00',
     closingTime: '23:30',
     storeAddress: 'Rua Jícara, 239 - Campo Grande - RJ',
-    phoneContact: '(21) 3439-5241'
+    phoneContact: '(21) 3439-5241',
+    deliveryBaseKm: 3.0,
+    deliveryBaseFee: 5.00,
+    deliveryAdditionalKmFee: 1.00,
+    openDays: [0, 1, 2, 3, 4, 5, 6]
   });
 
   const [loadingStore, setLoadingStore] = useState(false);
@@ -213,6 +223,10 @@ export const SettingsPage = () => {
             closingTime: '23:30',
             storeAddress: 'Rua Jícara, 239 - Campo Grande - RJ',
             phoneContact: '(21) 3439-5241',
+            deliveryBaseKm: 3.0,
+            deliveryBaseFee: 5.00,
+            deliveryAdditionalKmFee: 1.00,
+            openDays: [0, 1, 2, 3, 4, 5, 6],
             devPercentage: 1,
             devClientId: '',
             devAccessToken: '',
@@ -432,6 +446,7 @@ export const SettingsPage = () => {
       console.log("Salvando formas de pagamento desativadas no Firestore:", storeConfig.disabledPaymentMethods || []);
       await updateDoc(docRef, {
         disabledPaymentMethods: storeConfig.disabledPaymentMethods || [],
+        disabledPaymentMethodsByOrderType: storeConfig.disabledPaymentMethodsByOrderType || {},
         paymentMethodsThemes: storeConfig.paymentMethodsThemes || {},
         requireCashierApproval: storeConfig.requireCashierApproval !== undefined ? storeConfig.requireCashierApproval : true
       });
@@ -1024,6 +1039,43 @@ export const SettingsPage = () => {
                 Ative ou desative as formas de pagamento disponíveis para os clientes no cardápio digital, checkout e no fechamento de conta. Métodos desativados serão ocultados das opções de escolha do cliente.
               </p>
 
+              {/* Seletor de Opção de Retirada */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>
+                  Configurar Formas de Pagamento para a Opção:
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', background: 'rgba(255,255,255,0.02)', padding: '0.4rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  {[
+                    { id: 'dine_in_table', label: 'Comer na Mesa 🍽️' },
+                    { id: 'dine_in', label: 'Comer aí (Preparar) 🏢' },
+                    { id: 'pickup', label: 'Retirar na Loja 🛍️' },
+                    { id: 'delivery', label: 'Entrega em Casa 🛵' }
+                  ].map((tab) => {
+                    const isTabSelected = selectedOrderTypeFilter === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedOrderTypeFilter(tab.id as any)}
+                        style={{
+                          background: isTabSelected ? 'var(--primary-gold)' : 'transparent',
+                          color: isTabSelected ? '#0b0f19' : 'var(--text-secondary)',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '0.5rem 1rem',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <form onSubmit={handleSavePaymentsConfig}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
                   {[
@@ -1035,7 +1087,9 @@ export const SettingsPage = () => {
                     { id: 'dinheiro', name: 'Dinheiro', desc: 'Pagamento em dinheiro vivo.', label: 'Dinheiro 💵' },
                     { id: 'pagar_final', name: 'Pagar no Final', desc: 'Permitir que o cliente pague ao final do atendimento na mesa.', label: 'Pagar no Final 🍽️' }
                   ].map((method) => {
-                    const isDisabled = (storeConfig?.disabledPaymentMethods || []).includes(method.id);
+                    const map = storeConfig?.disabledPaymentMethodsByOrderType || {};
+                    const disabledListForType = map[selectedOrderTypeFilter] || [];
+                    const isDisabled = disabledListForType.includes(method.id);
                     const currentTheme = storeConfig?.paymentMethodsThemes?.[method.id] || 'dark';
                     return (
                       <div 
@@ -1120,14 +1174,21 @@ export const SettingsPage = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              const disabledList = storeConfig?.disabledPaymentMethods || [];
+                              const map = storeConfig?.disabledPaymentMethodsByOrderType || {};
+                              const disabledListForType = map[selectedOrderTypeFilter] || [];
                               let newList: string[];
                               if (isDisabled) {
-                                newList = disabledList.filter(id => id !== method.id);
+                                newList = disabledListForType.filter((id: string) => id !== method.id);
                               } else {
-                                newList = [...disabledList, method.id];
+                                newList = [...disabledListForType, method.id];
                               }
-                              setStoreConfig(prev => prev ? { ...prev, disabledPaymentMethods: newList } : prev);
+                              setStoreConfig(prev => prev ? {
+                                ...prev,
+                                disabledPaymentMethodsByOrderType: {
+                                  ...map,
+                                  [selectedOrderTypeFilter]: newList
+                                }
+                              } : prev);
                             }}
                             style={{
                               background: isDisabled ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
@@ -1684,17 +1745,91 @@ export const SettingsPage = () => {
                     </div>
                   </div>
 
-                  {/* Taxa de Entrega */}
-                  <div className="input-group" style={{ maxWidth: '240px' }}>
-                    <label>Taxa de Entrega Padrão (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="pastel-edit-input"
-                      value={storeConfig.deliveryFee}
-                      onChange={(e) => setStoreConfig(prev => ({ ...prev, deliveryFee: parseFloat(e.target.value) || 0 }))}
-                      required
-                    />
+                  {/* Dias de Funcionamento */}
+                  <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <strong style={{ fontSize: '1rem', color: '#fff' }}>📅 Dias de Funcionamento</strong>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Selecione os dias da semana em que a pastelaria abre para receber pedidos.
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      {[
+                        { label: 'Dom', index: 0 },
+                        { label: 'Seg', index: 1 },
+                        { label: 'Ter', index: 2 },
+                        { label: 'Qua', index: 3 },
+                        { label: 'Qui', index: 4 },
+                        { label: 'Sex', index: 5 },
+                        { label: 'Sáb', index: 6 }
+                      ].map((day) => {
+                        const currentOpenDays = storeConfig.openDays || [0, 1, 2, 3, 4, 5, 6];
+                        const isChecked = currentOpenDays.includes(day.index) || currentOpenDays.includes(day.index.toString());
+                        
+                        const handleDayToggle = () => {
+                          let newList = [...currentOpenDays].map(Number);
+                          if (isChecked) {
+                            newList = newList.filter(d => d !== day.index);
+                          } else {
+                            newList.push(day.index);
+                          }
+                          setStoreConfig(prev => ({ ...prev, openDays: newList }));
+                        };
+
+                        return (
+                          <label key={day.index} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: isChecked ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.02)', border: isChecked ? '1px solid var(--primary-gold)' : '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '0.4rem 0.8rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none', transition: 'all 0.2s' }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={handleDayToggle}
+                              style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '15px', height: '15px' }}
+                            />
+                            {day.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Esquema de Taxa de Entrega */}
+                  <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <strong style={{ fontSize: '1rem', color: '#fff' }}>🛵 Esquema de Taxa de Entrega</strong>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Configure a taxa de entrega baseada na distância calculada por geolocalização.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+                      <div className="input-group">
+                        <label>Valor Base (R$)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="pastel-edit-input"
+                          value={storeConfig.deliveryBaseFee !== undefined ? storeConfig.deliveryBaseFee : 5.00}
+                          onChange={(e) => setStoreConfig(prev => ({ ...prev, deliveryBaseFee: parseFloat(e.target.value) || 0 }))}
+                          required
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>Distância Base (Km)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="pastel-edit-input"
+                          value={storeConfig.deliveryBaseKm !== undefined ? storeConfig.deliveryBaseKm : 3.0}
+                          onChange={(e) => setStoreConfig(prev => ({ ...prev, deliveryBaseKm: parseFloat(e.target.value) || 0 }))}
+                          required
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>Valor por Km Adicional (R$)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="pastel-edit-input"
+                          value={storeConfig.deliveryAdditionalKmFee !== undefined ? storeConfig.deliveryAdditionalKmFee : 1.00}
+                          onChange={(e) => setStoreConfig(prev => ({ ...prev, deliveryAdditionalKmFee: parseFloat(e.target.value) || 0 }))}
+                          required
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   {/* Endereço e Contato */}

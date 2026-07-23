@@ -290,6 +290,7 @@ export const ClientDashboard = ({
   const [tempWithCatupiry, setTempWithCatupiry] = useState(false);
   const [tempWithBorda, setTempWithBorda] = useState(false);
   const [tempIngredients, setTempIngredients] = useState<string[]>([]);
+  const [tempPastelSize, setTempPastelSize] = useState<'grande' | 'kids'>('grande');
   
   const [showBillPixLightbox, setShowBillPixLightbox] = useState(false);
   const [billPixQrCode, setBillPixQrCode] = useState('');
@@ -307,34 +308,39 @@ export const ClientDashboard = ({
         const data = docSnap.data();
         console.log("Cardápio - Configurações carregadas em tempo real do Firestore:", data);
         setStoreConfig(data);
-
-        const disabled = data.disabledPaymentMethods || [];
-        
-        // Reset dynamic paymentMethod if selected method is disabled
-        setPaymentMethod(current => {
-          if (disabled.includes(current)) {
-            const allMethods = ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'pagar_final', 'dinheiro'];
-            const firstEnabled = allMethods.find(m => !disabled.includes(m)) as any;
-            return firstEnabled || current;
-          }
-          return current;
-        });
-
-        // Reset dynamic billPaymentMethod if selected method is disabled
-        setBillPaymentMethod(current => {
-          if (disabled.includes(current)) {
-            const allBillMethods = ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'dinheiro'];
-            const firstEnabledBill = allBillMethods.find(m => !disabled.includes(m)) as any;
-            return firstEnabledBill || current;
-          }
-          return current;
-        });
       }
     }, (err) => {
       console.error('Erro ao escutar store_config no cardápio:', err);
     });
     return () => unsubscribe();
   }, []);
+
+  // Reset selected payment method if it becomes disabled for the current orderType
+  useEffect(() => {
+    if (!storeConfig) return;
+    
+    const disabled = storeConfig.disabledPaymentMethodsByOrderType?.[orderType] || storeConfig.disabledPaymentMethods || [];
+    
+    setPaymentMethod(current => {
+      if (disabled.includes(current)) {
+        const allMethods = orderType === 'dine_in_table'
+          ? ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'pagar_final', 'dinheiro']
+          : ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'dinheiro'];
+        const firstEnabled = allMethods.find(m => !disabled.includes(m)) as any;
+        return firstEnabled || current;
+      }
+      return current;
+    });
+
+    setBillPaymentMethod(current => {
+      if (disabled.includes(current)) {
+        const allBillMethods = ['pix', 'credito', 'google_pay', 'debito_point', 'credito_point', 'dinheiro'];
+        const firstEnabledBill = allBillMethods.find(m => !disabled.includes(m)) as any;
+        return firstEnabledBill || current;
+      }
+      return current;
+    });
+  }, [orderType, storeConfig]);
 
   // Verifica status do pagamento Pix do fechamento de conta periodicamente
   useEffect(() => {
@@ -1293,6 +1299,7 @@ export const ClientDashboard = ({
       setTempWithCatupiry(false);
       setTempWithBorda(false);
       setTempIngredients([]);
+      setTempPastelSize('grande');
       return;
     }
 
@@ -1315,26 +1322,29 @@ export const ClientDashboard = ({
     });
   };
 
-  const removeFromCart = (id: number) => {
-    setCart((prevCart) => prevCart.filter((i) => i.id !== id));
+  const removeFromCart = (idx: number) => {
+    setCart((prevCart) => prevCart.filter((_, i) => i !== idx));
   };
 
-  const updateQuantity = (id: number, delta: number) => {
-    if (delta > 0 && !canManageStock) {
-      const originalProduct = pastels.find((p: any) => p.id === id);
-      if (originalProduct && originalProduct.stock !== undefined) {
-        const totalQuantityInCart = cart.filter(c => c.id === id).reduce((sum, c) => sum + c.quantity, 0);
-        if (totalQuantityInCart + delta > Number(originalProduct.stock)) {
-          alert(`Desculpe, só temos ${originalProduct.stock} unidades de "${originalProduct.name}" em estoque.`);
-          return;
+  const updateQuantity = (idx: number, delta: number) => {
+    setCart((prevCart) => {
+      const item = prevCart[idx];
+      if (!item) return prevCart;
+
+      if (delta > 0 && !canManageStock) {
+        const originalProduct = pastels.find((p: any) => p.id === item.id);
+        if (originalProduct && originalProduct.stock !== undefined) {
+          const totalQuantityInCart = prevCart.filter(c => c.id === item.id).reduce((sum, c) => sum + c.quantity, 0);
+          if (totalQuantityInCart + delta > Number(originalProduct.stock)) {
+            alert(`Desculpe, só temos ${originalProduct.stock} unidades de "${originalProduct.name}" em estoque.`);
+            return prevCart;
+          }
         }
       }
-    }
-    setCart((prevCart) =>
-      prevCart
-        .map((i) => (i.id === id ? { ...i, quantity: i.quantity + delta } : i))
-        .filter((i) => i.quantity > 0)
-    );
+      return prevCart
+        .map((item, i) => i === idx ? { ...item, quantity: item.quantity + delta } : item)
+        .filter((item) => item.quantity > 0);
+    });
   };
 
   const toggleCartItemCustom = (idx: number, field: 'withCatupiry' | 'withBorda') => {
@@ -1368,8 +1378,12 @@ export const ClientDashboard = ({
     return `${km.toFixed(1).replace('.', ',')} km`;
   };
 
+  const baseKm = storeConfig?.deliveryBaseKm !== undefined ? Number(storeConfig.deliveryBaseKm) : 3.0;
+  const baseFee = storeConfig?.deliveryBaseFee !== undefined ? Number(storeConfig.deliveryBaseFee) : 5.0;
+  const additionalKmFee = storeConfig?.deliveryAdditionalKmFee !== undefined ? Number(storeConfig.deliveryAdditionalKmFee) : 1.0;
+
   const deliveryFee = (orderType === 'delivery' && routeDistance !== null)
-    ? (routeDistance / 1000 <= 3 ? 5.00 : 5.00 + Math.floor(routeDistance / 1000 - 3.0) * 1.00)
+    ? (routeDistance / 1000 <= baseKm ? baseFee : baseFee + Math.floor(routeDistance / 1000 - baseKm) * additionalKmFee)
     : 0;
 
   const serviceFee = (orderType === 'dine_in_table' && !waiveServiceFee)
@@ -1391,8 +1405,8 @@ export const ClientDashboard = ({
   const stampsNeeded = storeConfig?.stampsNeeded || 10;
   const canRescueFidelity = stampsCount >= stampsNeeded && cartHasPastel;
 
-  // Valor do desconto: 1 pastel de graça (R$ 20,00)
-  const fidelityDiscount = (useFidelityRescue && canRescueFidelity) ? 20.00 : 0;
+  // Valor do desconto: 1 pastel de graça (R$ 23,00)
+  const fidelityDiscount = (useFidelityRescue && canRescueFidelity) ? 23.00 : 0;
 
   const finalTotal = Math.max(0, cartTotal - fidelityDiscount) + deliveryFee + serviceFee;
 
@@ -1477,6 +1491,9 @@ export const ClientDashboard = ({
       items: cart.map(item => {
         let customSuffix = '';
         const details: string[] = [];
+        if (item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') {
+          details.push(item.size === 'kids' ? 'Kids' : 'Grande');
+        }
         if (item.category === 'Pastéis Salgados') {
           if (item.withCatupiry) details.push('Catupiry');
           if (item.withBorda) details.push('Borda de Queijo');
@@ -1495,7 +1512,8 @@ export const ClientDashboard = ({
           name: `${item.name}${customSuffix}`,
           price: item.price,
           quantity: item.quantity,
-          category: item.category
+          category: item.category,
+          size: item.size
         };
       }),
       total: finalTotal,
@@ -1662,6 +1680,9 @@ export const ClientDashboard = ({
             items: cart.map(item => {
               let customSuffix = '';
               const details: string[] = [];
+              if (item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') {
+                details.push(item.size === 'kids' ? 'Kids' : 'Grande');
+              }
               if (item.category === 'Pastéis Salgados') {
                 if (item.withCatupiry) details.push('Catupiry');
                 if (item.withBorda) details.push('Borda de Queijo');
@@ -1680,7 +1701,8 @@ export const ClientDashboard = ({
                 name: `${item.name}${customSuffix}`,
                 price: item.price,
                 quantity: item.quantity,
-                category: item.category
+                category: item.category,
+                size: item.size
               };
             }),
             total: finalTotal,
@@ -1775,6 +1797,9 @@ export const ClientDashboard = ({
         items: cart.map(item => {
           let customSuffix = '';
           const details: string[] = [];
+          if (item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') {
+            details.push(item.size === 'kids' ? 'Kids' : 'Grande');
+          }
           if (item.category === 'Pastéis Salgados') {
             if (item.withCatupiry) details.push('Catupiry');
             if (item.withBorda) details.push('Borda de Queijo');
@@ -1793,7 +1818,8 @@ export const ClientDashboard = ({
             name: `${item.name}${customSuffix}`,
             price: item.price,
             quantity: item.quantity,
-            category: item.category
+            category: item.category,
+            size: item.size
           };
         }),
         total: finalTotal,
@@ -2106,6 +2132,9 @@ export const ClientDashboard = ({
             items: cart.map(item => {
               let customSuffix = '';
               const details: string[] = [];
+              if (item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') {
+                details.push(item.size === 'kids' ? 'Kids' : 'Grande');
+              }
               if (item.category === 'Pastéis Salgados') {
                 if (item.withCatupiry) details.push('Catupiry');
                 if (item.withBorda) details.push('Borda de Queijo');
@@ -2121,7 +2150,8 @@ export const ClientDashboard = ({
                 name: `${item.name}${customSuffix}`,
                 price: item.price,
                 quantity: item.quantity,
-                category: item.category
+                category: item.category,
+                size: item.size
               };
             }),
             total: finalTotal,
@@ -2255,6 +2285,9 @@ export const ClientDashboard = ({
         items: cart.map(item => {
           let customSuffix = '';
           const details: string[] = [];
+          if (item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') {
+            details.push(item.size === 'kids' ? 'Kids' : 'Grande');
+          }
           if (item.category === 'Pastéis Salgados') {
             if (item.withCatupiry) details.push('Catupiry');
             if (item.withBorda) details.push('Borda de Queijo');
@@ -2273,7 +2306,8 @@ export const ClientDashboard = ({
             name: `${item.name}${customSuffix}`,
             price: item.price,
             quantity: item.quantity,
-            category: item.category
+            category: item.category,
+            size: item.size
           };
         }),
         total: finalTotal,
@@ -2738,7 +2772,7 @@ export const ClientDashboard = ({
               fontSize: '0.9rem',
               lineHeight: '1.5'
             }}>
-              <strong>📢 Qualquer pastel deste cardápio custa apenas R$ 20,00! 🍕⭐</strong>
+              <strong>📢 Qualquer pastel grande deste cardápio custa apenas R$ 23,00 ou R$ 14,00 o pastel kids! 🍕⭐</strong>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                 {activeCategory === 'Pastéis Doces' 
                   ? 'A borda de Kit-Kat é opcional (não é cobrada por fora) opções personalizáveis abaixo.'
@@ -2994,30 +3028,37 @@ export const ClientDashboard = ({
                           <span style={{ fontSize: '0.8rem', color: 'var(--primary-gold)' }}>R$ {item.price.toFixed(2).replace('.', ',')}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <button type="button" onClick={() => updateQuantity(item.id, -1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Minus size={14} /></button>
+                          <button type="button" onClick={() => updateQuantity(idx, -1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Minus size={14} /></button>
                           <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.quantity}</span>
-                          <button type="button" onClick={() => updateQuantity(item.id, 1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Plus size={14} /></button>
-                          <button type="button" onClick={() => removeFromCart(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '0.5rem' }}><Trash2 size={14} /></button>
+                          <button type="button" onClick={() => updateQuantity(idx, 1)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Plus size={14} /></button>
+                          <button type="button" onClick={() => removeFromCart(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '0.5rem' }}><Trash2 size={14} /></button>
                         </div>
                       </div>
                       
                       {/* Mostrar resumo rápido das opções no carrinho */}
-                      {item.category === 'Pastéis Salgados' && (
+                      {(item.category === 'Pastéis Salgados' || item.category === 'Pastéis Doces') && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                          <span>Catupiry: {item.withCatupiry ? 'Sim ✅' : 'Não ❌'}</span>
-                          <span>·</span>
-                          <span>Borda: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
-                          {item.ingredients && item.ingredients.length > 0 && (
+                          <span style={{ fontWeight: 600, color: 'var(--primary-gold)' }}>Tamanho: {item.size === 'kids' ? 'Kids' : 'Grande'}</span>
+                          {item.category === 'Pastéis Salgados' && (
                             <>
                               <span>·</span>
-                              <span>Adicionais: {item.ingredients.join(', ')}</span>
+                              <span>Catupiry: {item.withCatupiry ? 'Sim ✅' : 'Não ❌'}</span>
+                              <span>·</span>
+                              <span>Borda: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
+                              {item.ingredients && item.ingredients.length > 0 && (
+                                <>
+                                  <span>·</span>
+                                  <span>Adicionais: {item.ingredients.join(', ')}</span>
+                                </>
+                              )}
                             </>
                           )}
-                        </div>
-                      )}
-                      {item.category === 'Pastéis Doces' && (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                          <span>Borda Kit-Kat: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
+                          {item.category === 'Pastéis Doces' && (
+                            <>
+                              <span>·</span>
+                              <span>Borda Kit-Kat: {item.withBorda ? 'Sim ✅' : 'Não ❌'}</span>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3343,7 +3384,7 @@ export const ClientDashboard = ({
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 {(() => {
-                  const disabled = storeConfig?.disabledPaymentMethods || [];
+                  const disabled = storeConfig?.disabledPaymentMethodsByOrderType?.[orderType] || storeConfig?.disabledPaymentMethods || [];
                   let methods = [];
                   if (orderType === 'dine_in_table') {
                     methods = [
@@ -3987,7 +4028,7 @@ export const ClientDashboard = ({
                         📍 <span style={{ color: 'var(--primary-gold)' }}>Distancia: {formatDistance(routeDistance)}</span>
                       </p>
                       <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', lineHeight: '1.4' }}>
-                        * Taxa de entrega: R$ 5,00 até 3 km + R$ 1,00 por km adicional completo.
+                        * Taxa de entrega: R$ {(storeConfig?.deliveryBaseFee !== undefined ? storeConfig.deliveryBaseFee : 5.00).toFixed(2).replace('.', ',')} até {storeConfig?.deliveryBaseKm !== undefined ? storeConfig.deliveryBaseKm : 3} km + R$ {(storeConfig?.deliveryAdditionalKmFee !== undefined ? storeConfig.deliveryAdditionalKmFee : 1.00).toFixed(2).replace('.', ',')} por km adicional completo.
                       </p>
                     </>
                   )}
@@ -4747,7 +4788,7 @@ export const ClientDashboard = ({
                         <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em', display: 'block', marginBottom: '0.4rem' }}>Pagar Saldo Devedor Via</span>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
                            {(() => {
-                            const disabled = storeConfig?.disabledPaymentMethods || [];
+                            const disabled = storeConfig?.disabledPaymentMethodsByOrderType?.['dine_in_table'] || storeConfig?.disabledPaymentMethods || [];
                             const methods = [
                               ['pix', 'Pix 🟡'],
                               ['credito', 'Crédito Online 💳'],
@@ -5137,9 +5178,26 @@ export const ClientDashboard = ({
               <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--primary-gold)' }}>
                 ✨ Customizar {customizingPastel.name}
               </h3>
-              <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                R$ {customizingPastel.price.toFixed(2).replace('.', ',')}
-              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.6rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={tempPastelSize === 'grande'}
+                    onChange={() => setTempPastelSize('grande')}
+                    style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '16px', height: '16px' }}
+                  />
+                  Pastel Grande R$ 23,00
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#fff', cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={tempPastelSize === 'kids'}
+                    onChange={() => setTempPastelSize('kids')}
+                    style={{ accentColor: 'var(--primary-gold)', cursor: 'pointer', width: '16px', height: '16px' }}
+                  />
+                  Pastel Kids R$ 14,00
+                </label>
+              </div>
             </div>
 
             {/* Fechar */}
@@ -5288,8 +5346,10 @@ export const ClientDashboard = ({
                     return;
                   }
                   setCart((prevCart) => {
+                    const selectedPrice = tempPastelSize === 'kids' ? 14.00 : 23.00;
                     const existingIdx = prevCart.findIndex(i => 
                       i.id === customizingPastel.id && 
+                      i.size === tempPastelSize &&
                       i.withCatupiry === tempWithCatupiry && 
                       i.withBorda === tempWithBorda && 
                       JSON.stringify((i.ingredients || []).slice().sort()) === JSON.stringify(tempIngredients.slice().sort())
@@ -5302,7 +5362,8 @@ export const ClientDashboard = ({
                     return [...prevCart, {
                       id: customizingPastel.id,
                       name: customizingPastel.name,
-                      price: customizingPastel.price,
+                      price: selectedPrice,
+                      size: tempPastelSize,
                       quantity: 1,
                       category: customizingPastel.category || 'Pastéis Salgados',
                       withCatupiry: tempWithCatupiry,

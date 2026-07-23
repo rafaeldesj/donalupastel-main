@@ -100,6 +100,20 @@ const MainLayout = () => {
       // Handle next day closing time
       const closesNextDay = closeTimeInMinutes < openTimeInMinutes;
 
+      // Verifica os dias da semana em que abre
+      if (storeConfig.openDays && storeConfig.openDays.length > 0) {
+        let businessDayIndex = now.getDay();
+        if (closesNextDay && currentTimeInMinutes < closeTimeInMinutes) {
+          businessDayIndex = (businessDayIndex - 1 + 7) % 7;
+        }
+        const isDayOpen = storeConfig.openDays.includes(businessDayIndex) || 
+                          storeConfig.openDays.includes(businessDayIndex.toString());
+        if (!isDayOpen) {
+          setStoreStatus({ status: 'closed', label: 'Fechado hoje' });
+          return;
+        }
+      }
+
       let isOpen = false;
       let minutesToClose = 9999;
 
