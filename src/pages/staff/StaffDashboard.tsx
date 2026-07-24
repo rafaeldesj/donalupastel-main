@@ -66,6 +66,28 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const [viewingStatsDetailType, setViewingStatsDetailType] = useState<'realized' | 'paid' | 'unpaid' | null>(null);
   const [showDevToolsModal, setShowDevToolsModal] = useState<boolean>(false);
   const [devSelectedClientUid, setDevSelectedClientUid] = useState<string>('');
+  const [deliverers, setDeliverers] = useState<any[]>([]);
+  const [selectedDelivererMap, setSelectedDelivererMap] = useState<Record<string, string>>({});
+
+  const handleAssignDeliverer = async (orderId: string, delivererId: string) => {
+    if (!delivererId) {
+      alert('Selecione um entregador.');
+      return;
+    }
+    const deliverer = deliverers.find(d => d.uid === delivererId);
+    if (!deliverer) return;
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'delivering',
+        deliveryUid: deliverer.uid,
+        deliveryName: deliverer.name || deliverer.displayName || deliverer.email || 'Entregador',
+        dispatchedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Erro ao atribuir entregador:', err);
+      alert('Erro ao atribuir entregador.');
+    }
+  };
 
   const handleApproveCashierOrder = async (order: OrderDocument) => {
     if (!order.id) return;
@@ -389,6 +411,22 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
       if (docSnap.exists()) {
         setStoreConfig(docSnap.data());
       }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Escuta entregadores ativos no sistema
+  useEffect(() => {
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        const u = docSnap.data();
+        if (u.staffFunctions?.delivery === true) {
+          list.push({ uid: docSnap.id, ...u });
+        }
+      });
+      setDeliverers(list);
     });
     return () => unsubscribe();
   }, []);
@@ -814,7 +852,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
 
   // Filtragem de pedidos
   const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'prepared');
-  const attendingOrders = orders.filter(o => o.status === 'ready');
+  const attendingOrders = orders.filter(o => o.status === 'ready' || (o.status === 'delivering' && o.orderType === 'delivery'));
   const cashierOrders = orders.filter(o => o.status === 'ready');
   const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento' || o.status === 'awaiting_payment');
   const deliveryOrders = orders.filter(o => (o.status === 'ready' || o.status === 'delivering') && o.address);
@@ -1034,91 +1072,185 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                 {attendingOrders.length === 0 ? (
                   <p style={{ color: 'var(--text-secondary)', padding: '1rem', gridColumn: '1 / -1', textAlign: 'center' }}>Nenhum pedido pronto aguardando entrega.</p>
                 ) : (
-                  attendingOrders.map((order) => (
-                    <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
-                      <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                          <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
-                          <span className="order-badge-status" style={{ backgroundColor: '#10b98115', color: '#10b981' }}>Pronto</span>
+                  attendingOrders.map((order) => {
+                    const isDelivery = order.orderType === 'delivery';
+                    const hasDeliverer = !!order.deliveryUid;
+
+                    return (
+                      <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
+                        <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                            <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
+                            <span className="order-badge-status" style={{ 
+                              backgroundColor: order.status === 'delivering' ? 'rgba(245, 158, 11, 0.15)' : '#10b98115', 
+                              color: order.status === 'delivering' ? 'var(--primary-gold)' : '#10b981' 
+                            }}>
+                              {order.status === 'delivering' ? 'Em Rota' : 'Pronto'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
+                            {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
+                            <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
+                            {isDelivery && order.deliveryName && (
+                              <div style={{ marginTop: '0.1rem', color: 'var(--primary-gold)', fontWeight: 600 }}>
+                                🏍️ Entregador: {order.deliveryName}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                          <div>Nome: <strong style={{ color: '#fff' }}>{order.clientName}</strong></div>
-                          {order.clientPhone && <div>Celular: <strong style={{ color: '#fff' }}>{order.clientPhone}</strong></div>}
-                          <div>Tipo: <strong style={{ color: '#fff' }}>{getOrderTypeLabel(order)}</strong></div>
+                        <div style={{ margin: '1rem 0' }}>
+                          {order.items.map((item, index) => (
+                            <p key={index} className="order-desc">{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
+                          ))}
+                          {(order.deliveryFee ?? 0) > 0 && (
+                            <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
+                              🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
+                            </p>
+                          )}
+                          {(order.serviceFee ?? 0) > 0 && (
+                            <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
+                              🪑 Taxa de Serviço (10%): R$ {(order.serviceFee ?? 0).toFixed(2).replace('.', ',')}
+                            </p>
+                          )}
                         </div>
-                      </div>
-                      <div style={{ margin: '1rem 0' }}>
-                        {order.items.map((item, index) => (
-                          <p key={index} className="order-desc">{item.quantity}x {item.name} - R$ {((item.price ?? 0) * item.quantity).toFixed(2).replace('.', ',')}</p>
-                        ))}
-                        {(order.deliveryFee ?? 0) > 0 && (
-                          <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
-                            🛵 Taxa de Entrega: R$ {(order.deliveryFee ?? 0).toFixed(2).replace('.', ',')}
-                          </p>
+                        {order.address && (
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(59, 130, 246, 0.05)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.1)', marginBottom: '1rem' }}>
+                            <Navigation size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                            {order.address.street}, {order.address.number} ({order.address.neighborhood})
+                          </div>
                         )}
-                        {(order.serviceFee ?? 0) > 0 && (
-                          <p className="order-desc" style={{ fontSize: '0.9rem', color: 'var(--primary-gold)', fontStyle: 'italic', margin: '0.2rem 0' }}>
-                            🪑 Taxa de Serviço (10%): R$ {(order.serviceFee ?? 0).toFixed(2).replace('.', ',')}
-                          </p>
-                        )}
-                      </div>
-                      {order.address && (
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', background: 'rgba(59, 130, 246, 0.05)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.1)', marginBottom: '1rem' }}>
-                          <Navigation size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                          {order.address.street}, {order.address.number} ({order.address.neighborhood})
-                        </div>
-                      )}
-                      <div className="order-actions" style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <button 
-                          type="button" 
-                          onClick={() => printOrder(order).catch(err => alert("Erro ao imprimir: " + err.message))} 
-                          className="btn-small" 
-                          style={{ 
-                            width: '100%', 
-                            padding: '0.6rem', 
-                            background: 'rgba(245, 158, 11, 0.1)', 
-                            color: 'var(--primary-gold)', 
-                            border: '1px solid rgba(245, 158, 11, 0.2)', 
-                            borderRadius: '8px', 
-                            cursor: 'pointer', 
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.4rem'
-                          }}
-                        >
-                          <Printer size={14} /> Imprimir Via Embalagem
-                        </button>
-                        <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
-                          <button
-                            type="button"
-                            onClick={() => order.id && handleMarkAsDelivered(order)}
-                            className="btn-small btn-success"
-                            style={{
-                              flex: 1.5,
-                              padding: '0.6rem',
-                              background: '#10b981',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '8px',
-                              cursor: 'pointer',
+                        <div className="order-actions" style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <button 
+                            type="button" 
+                            onClick={() => printOrder(order, true).catch(err => alert("Erro ao imprimir: " + err.message))} 
+                            className="btn-small" 
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.6rem', 
+                              background: 'rgba(59, 130, 246, 0.1)', 
+                              color: '#3b82f6', 
+                              border: '1px solid rgba(59, 130, 246, 0.2)', 
+                              borderRadius: '8px', 
+                              cursor: 'pointer', 
                               fontWeight: 600,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '0.3rem'
+                              gap: '0.4rem'
                             }}
                           >
-                            <Check size={14} style={{ flexShrink: 0 }} /> Entregue
+                            <Printer size={14} /> Imprimir Nota Resumida
                           </button>
-                          {isAuthorizedCancel && (
+                          
+                          <button 
+                            type="button" 
+                            onClick={() => printOrder(order).catch(err => alert("Erro ao imprimir: " + err.message))} 
+                            className="btn-small" 
+                            style={{ 
+                              width: '100%', 
+                              padding: '0.6rem', 
+                              background: 'rgba(245, 158, 11, 0.1)', 
+                              color: 'var(--primary-gold)', 
+                              border: '1px solid rgba(245, 158, 11, 0.2)', 
+                              borderRadius: '8px', 
+                              cursor: 'pointer', 
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.4rem'
+                            }}
+                          >
+                            <Printer size={14} /> Imprimir Via Embalagem
+                          </button>
+
+                          {isDelivery && !hasDeliverer ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Atribuir Entregador:</label>
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <select
+                                  value={selectedDelivererMap[order.id!] || ''}
+                                  onChange={(e) => setSelectedDelivererMap(prev => ({ ...prev, [order.id!]: e.target.value }))}
+                                  style={{
+                                    flex: 1,
+                                    background: '#1f2937',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '6px',
+                                    padding: '0.4rem',
+                                    fontSize: '0.85rem'
+                                  }}
+                                >
+                                  <option value="">Selecione...</option>
+                                  {deliverers.map(d => (
+                                    <option key={d.uid} value={d.uid}>{d.name || d.displayName || d.email}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignDeliverer(order.id!, selectedDelivererMap[order.id!] || '')}
+                                  className="btn-small btn-primary"
+                                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                >
+                                  Confirmar
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {(!isDelivery || hasDeliverer) && (
+                            <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+                              <button
+                                type="button"
+                                onClick={() => order.id && handleMarkAsDelivered(order)}
+                                className="btn-small btn-success"
+                                style={{
+                                  flex: 1.5,
+                                  padding: '0.6rem',
+                                  background: '#10b981',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.3rem'
+                                }}
+                              >
+                                <Check size={14} style={{ flexShrink: 0 }} /> Entregue
+                              </button>
+                              {isAuthorizedCancel && (
+                                <button
+                                  type="button"
+                                  onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }}
+                                  className="btn-small btn-danger"
+                                  style={{
+                                    flex: 1,
+                                    padding: '0.6rem',
+                                    background: '#dc2626',
+                                    color: '#fff',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {isDelivery && !hasDeliverer && isAuthorizedCancel && (
                             <button
                               type="button"
                               onClick={() => { if (order.id) { setCancelOrderId(order.id); setCancelOrderSeq(order.dailySeq || getOrderSequenceNumber(order.id, order.createdAt)); } }}
                               className="btn-small btn-danger"
                               style={{
-                                flex: 1,
+                                width: '100%',
                                 padding: '0.6rem',
                                 background: '#dc2626',
                                 color: '#fff',
@@ -1132,9 +1264,10 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                             </button>
                           )}
                         </div>
+                        {isDelivery ? <DeliveryTimer order={order} /> : <OrderTimer order={order} />}
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -3040,6 +3173,81 @@ const OrderTimer = ({ order }: { order: OrderDocument }) => {
           {order.kitchenFinishedAt ? '✅ ' : '⏱️ '}{elapsed}
         </strong>
       </div>
+    </div>
+  );
+};
+
+const DeliveryTimer = ({ order }: { order: OrderDocument }) => {
+  const [elapsedWait, setElapsedWait] = useState('');
+  const [elapsedRoute, setElapsedRoute] = useState('');
+
+  useEffect(() => {
+    const formatDuration = (ms: number) => {
+      const hours = Math.floor(ms / (1000 * 60 * 60));
+      const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+
+      return [
+        hours > 0 ? String(hours).padStart(2, '0') : null,
+        String(minutes).padStart(2, '0'),
+        String(seconds).padStart(2, '0')
+      ].filter(Boolean).join(':');
+    };
+
+    const updateTimers = () => {
+      // 1. Waiting for deliverer timer (no balcão)
+      const waitStart = order.kitchenFinishedAt ? new Date(order.kitchenFinishedAt).getTime() : null;
+      if (waitStart) {
+        const waitEnd = order.dispatchedAt ? new Date(order.dispatchedAt).getTime() : Date.now();
+        const diffWait = Math.max(0, waitEnd - waitStart);
+        setElapsedWait(formatDuration(diffWait));
+      } else {
+        setElapsedWait('--:--');
+      }
+
+      // 2. Out for delivery timer (em rota)
+      if (order.dispatchedAt) {
+        const routeStart = new Date(order.dispatchedAt).getTime();
+        const routeEnd = order.deliveredAt ? new Date(order.deliveredAt).getTime() : Date.now();
+        const diffRoute = Math.max(0, routeEnd - routeStart);
+        setElapsedRoute(formatDuration(diffRoute));
+      } else {
+        setElapsedRoute('--:--');
+      }
+    };
+
+    updateTimers();
+    const interval = setInterval(updateTimers, 1000);
+    return () => clearInterval(interval);
+  }, [order.kitchenFinishedAt, order.dispatchedAt, order.deliveredAt, order.status]);
+
+  return (
+    <div style={{
+      marginTop: '0.75rem',
+      fontSize: '0.85rem',
+      color: 'var(--text-secondary)',
+      background: 'rgba(255, 255, 255, 0.02)',
+      padding: '0.6rem 0.8rem',
+      borderRadius: '8px',
+      border: '1px solid rgba(255,255,255,0.05)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.2rem'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Tempo no Balcão:</span>
+        <strong style={{ color: order.dispatchedAt ? '#10b981' : 'var(--primary-gold)', fontFamily: 'monospace', fontSize: '0.95rem' }}>
+          {order.dispatchedAt ? '✅ ' : '⏱️ '}{elapsedWait}
+        </strong>
+      </div>
+      {order.status === 'delivering' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Tempo em Rota:</span>
+          <strong style={{ color: 'var(--primary-gold)', fontFamily: 'monospace', fontSize: '0.95rem' }}>
+            ⏱️ {elapsedRoute}
+          </strong>
+        </div>
+      )}
     </div>
   );
 };

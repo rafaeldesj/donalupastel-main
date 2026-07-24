@@ -212,7 +212,7 @@ export function getConnectedSerialName(): string {
 // -------------------------------------------------------------
 // Method 1: Standard System Printing (via Hidden Iframe)
 // -------------------------------------------------------------
-export function printOrderBrowser(order: OrderDocument, settings: PrinterSettings) {
+export function printOrderBrowser(order: OrderDocument, settings: PrinterSettings, summaryOnly: boolean = false) {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'absolute';
   iframe.style.width = '0px';
@@ -284,55 +284,58 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
     }
   }
 
-  const foods = order.items.filter(item => item.category !== 'Bebidas');
-  const beverages = order.items.filter(item => item.category === 'Bebidas');
-
-  const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
-  foods.forEach(item => {
-    slips.push({ type: 'food', items: [item] });
-  });
-  if (beverages.length > 0) {
-    slips.push({ type: 'beverages', items: beverages });
-  }
-
   let individualSlipsHtml = '';
-  slips.forEach(slip => {
-    let itemAddressHtml = '';
-    if (order.orderType === 'delivery' && order.address) {
-      itemAddressHtml = `
-        <div><strong>ENDEREÇO:</strong> ${order.address.street}, ${order.address.number}</div>
-        ${order.address.complement ? `<div><strong>COMPL:</strong> ${order.address.complement}</div>` : ''}
-      `;
+
+  if (!summaryOnly) {
+    const foods = order.items.filter(item => item.category !== 'Bebidas');
+    const beverages = order.items.filter(item => item.category === 'Bebidas');
+
+    const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
+    foods.forEach(item => {
+      slips.push({ type: 'food', items: [item] });
+    });
+    if (beverages.length > 0) {
+      slips.push({ type: 'beverages', items: beverages });
     }
 
-    const spacerHtml = `
-      <div style="height: 10em; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
-        <div style="width: 100%; border-top: 1px dashed #000;"></div>
-      </div>
-    `;
+    slips.forEach(slip => {
+      let itemAddressHtml = '';
+      if (order.orderType === 'delivery' && order.address) {
+        itemAddressHtml = `
+          <div><strong>ENDEREÇO:</strong> ${order.address.street}, ${order.address.number}</div>
+          ${order.address.complement ? `<div><strong>COMPL:</strong> ${order.address.complement}</div>` : ''}
+        `;
+      }
 
-    let itemsListHtml = '';
-    slip.items.forEach(item => {
-      itemsListHtml += `
-        <div style="font-size: 12px; margin-top: 6px;">
-          ${item.quantity}x <strong>${item.name}</strong>
+      const spacerHtml = `
+        <div style="height: 10em; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
+          <div style="width: 100%; border-top: 1px dashed #000;"></div>
+        </div>
+      `;
+
+      let itemsListHtml = '';
+      slip.items.forEach(item => {
+        itemsListHtml += `
+          <div style="font-size: 12px; margin-top: 6px;">
+            ${item.quantity}x <strong>${item.name}</strong>
+          </div>
+        `;
+      });
+
+      individualSlipsHtml += `
+        ${spacerHtml}
+        <div style="font-family: 'Courier New', Courier, monospace; font-size: 11px;">
+          <div class="bold">================================</div>
+          <div><strong>PEDIDO:</strong> ${seq}</div>
+          <div><strong>CLIENTE:</strong> ${order.clientName}</div>
+          ${order.clientPhone ? `<div><strong>TEL:</strong> ${order.clientPhone}</div>` : ''}
+          ${itemAddressHtml}
+          <div class="bold">--------------------------------</div>
+          ${itemsListHtml}
         </div>
       `;
     });
-
-    individualSlipsHtml += `
-      ${spacerHtml}
-      <div style="font-family: 'Courier New', Courier, monospace; font-size: 11px;">
-        <div class="bold">================================</div>
-        <div><strong>PEDIDO:</strong> ${seq}</div>
-        <div><strong>CLIENTE:</strong> ${order.clientName}</div>
-        ${order.clientPhone ? `<div><strong>TEL:</strong> ${order.clientPhone}</div>` : ''}
-        ${itemAddressHtml}
-        <div class="bold">--------------------------------</div>
-        ${itemsListHtml}
-      </div>
-    `;
-  });
+  }
 
   const htmlContent = `
     <html>
@@ -506,7 +509,7 @@ function wrapText(text: string, limit: number): string[] {
 // -------------------------------------------------------------
 // Method 2: Direct Bluetooth ESC/POS Printing
 // -------------------------------------------------------------
-function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Array {
+function encodeEscPos(order: OrderDocument, settings: PrinterSettings, summaryOnly: boolean = false): Uint8Array {
   const encoder = new TextEncoder();
   const buffer: number[] = [];
 
@@ -660,52 +663,54 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
   writeLine('Dona Lu - Feito com Amor');
 
   // 9. Individual Item slips for Kitchen/Delivery
-  const foods = order.items.filter(item => item.category !== 'Bebidas');
-  const beverages = order.items.filter(item => item.category === 'Bebidas');
+  if (!summaryOnly) {
+    const foods = order.items.filter(item => item.category !== 'Bebidas');
+    const beverages = order.items.filter(item => item.category === 'Bebidas');
 
-  const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
-  foods.forEach(item => {
-    slips.push({ type: 'food', items: [item] });
-  });
-  if (beverages.length > 0) {
-    slips.push({ type: 'beverages', items: beverages });
-  }
-
-  slips.forEach(slip => {
-    // Print 10 lines of space with a dashed line on the 5th line BEFORE each item
-    for (let i = 0; i < 4; i++) {
-      buffer.push(...LINE_FEED);
-    }
-    const maxChars = settings.paperSize === '80mm' ? 48 : 32;
-    buffer.push(...ALIGN_CENTER);
-    writeLine('- '.repeat(maxChars / 2).trim());
-    buffer.push(...ALIGN_LEFT, ...BOLD_ON);
-
-    writeLine('='.repeat(maxChars));
-    writeLine(`PEDIDO: ${seq}`);
-    writeLine(`CLIENTE: ${order.clientName}`);
-    if (order.clientPhone) {
-      writeLine(`TEL: ${order.clientPhone}`);
-    }
-    if (order.orderType === 'delivery' && order.address) {
-      writeLine(`ENDERECO: ${order.address.street}, ${order.address.number}`);
-      if (order.address.complement) {
-        writeLine(`COMPL: ${order.address.complement}`);
-      }
-    }
-    writeLine('-'.repeat(maxChars));
-    buffer.push(...BOLD_OFF);
-
-    // Print all items in the slip (with name wrapping)
-    slip.items.forEach(item => {
-      const qtyStr = `${item.quantity}x `;
-      const wrappedName = wrapText(item.name, maxChars - 3);
-      writeLine(`${qtyStr}${wrappedName[0]}`);
-      for (let i = 1; i < wrappedName.length; i++) {
-        writeLine(`   ${wrappedName[i]}`);
-      }
+    const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
+    foods.forEach(item => {
+      slips.push({ type: 'food', items: [item] });
     });
-  });
+    if (beverages.length > 0) {
+      slips.push({ type: 'beverages', items: beverages });
+    }
+
+    slips.forEach(slip => {
+      // Print 10 lines of space with a dashed line on the 5th line BEFORE each item
+      for (let i = 0; i < 4; i++) {
+        buffer.push(...LINE_FEED);
+      }
+      const maxChars = settings.paperSize === '80mm' ? 48 : 32;
+      buffer.push(...ALIGN_CENTER);
+      writeLine('- '.repeat(maxChars / 2).trim());
+      buffer.push(...ALIGN_LEFT, ...BOLD_ON);
+
+      writeLine('='.repeat(maxChars));
+      writeLine(`PEDIDO: ${seq}`);
+      writeLine(`CLIENTE: ${order.clientName}`);
+      if (order.clientPhone) {
+        writeLine(`TEL: ${order.clientPhone}`);
+      }
+      if (order.orderType === 'delivery' && order.address) {
+        writeLine(`ENDERECO: ${order.address.street}, ${order.address.number}`);
+        if (order.address.complement) {
+          writeLine(`COMPL: ${order.address.complement}`);
+        }
+      }
+      writeLine('-'.repeat(maxChars));
+      buffer.push(...BOLD_OFF);
+
+      // Print all items in the slip (with name wrapping)
+      slip.items.forEach(item => {
+        const qtyStr = `${item.quantity}x `;
+        const wrappedName = wrapText(item.name, maxChars - 3);
+        writeLine(`${qtyStr}${wrappedName[0]}`);
+        for (let i = 1; i < wrappedName.length; i++) {
+          writeLine(`   ${wrappedName[i]}`);
+        }
+      });
+    });
+  }
 
   buffer.push(...LINE_FEED, ...LINE_FEED, ...LINE_FEED, ...LINE_FEED);
 
@@ -715,13 +720,13 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
   return new Uint8Array(buffer);
 }
 
-export async function printOrderBluetooth(order: OrderDocument, settings: PrinterSettings): Promise<void> {
+export async function printOrderBluetooth(order: OrderDocument, settings: PrinterSettings, summaryOnly: boolean = false): Promise<void> {
   if (!isBluetoothConnected() || !activeBluetoothCharacteristic) {
     throw new Error('A impressora Bluetooth está desconectada. Conecte-a nas Configurações.');
   }
 
   try {
-    const data = encodeEscPos(order, settings);
+    const data = encodeEscPos(order, settings, summaryOnly);
     // Write in chunks of 20 bytes to prevent packet drops or GATT errors
     const chunkSize = 20;
     for (let i = 0; i < data.length; i += chunkSize) {
@@ -739,13 +744,13 @@ export async function printOrderBluetooth(order: OrderDocument, settings: Printe
 // -------------------------------------------------------------
 // Method 3: Direct USB/Serial ESC/POS Printing
 // -------------------------------------------------------------
-export async function printOrderSerial(order: OrderDocument, settings: PrinterSettings): Promise<void> {
+export async function printOrderSerial(order: OrderDocument, settings: PrinterSettings, summaryOnly: boolean = false): Promise<void> {
   if (!isSerialConnected() || !activeSerialPort) {
     throw new Error('A impressora USB está desconectada. Conecte-a nas Configurações.');
   }
 
   try {
-    const data = encodeEscPos(order, settings);
+    const data = encodeEscPos(order, settings, summaryOnly);
     const writer = activeSerialPort.writable.getWriter();
     await writer.write(data);
     writer.releaseLock();
@@ -758,17 +763,17 @@ export async function printOrderSerial(order: OrderDocument, settings: PrinterSe
 // -------------------------------------------------------------
 // High-Level Print Orchestrator
 // -------------------------------------------------------------
-export async function printOrder(order: OrderDocument): Promise<void> {
+export async function printOrder(order: OrderDocument, summaryOnly: boolean = false): Promise<void> {
   const settings = getPrinterSettings();
   const loopCount = Math.max(1, settings.copies);
 
   for (let i = 0; i < loopCount; i++) {
     if (settings.method === 'browser') {
-      printOrderBrowser(order, settings);
+      printOrderBrowser(order, settings, summaryOnly);
     } else if (settings.method === 'bluetooth') {
-      await printOrderBluetooth(order, settings);
+      await printOrderBluetooth(order, settings, summaryOnly);
     } else if (settings.method === 'serial') {
-      await printOrderSerial(order, settings);
+      await printOrderSerial(order, settings, summaryOnly);
     }
   }
 }

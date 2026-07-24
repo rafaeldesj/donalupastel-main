@@ -52,4 +52,6 @@ export interface OrderDocument {
   kitchenEnteredAt?: string;
   kitchenFinishedAt?: string;
   kitchenDurationSeconds?: number;
+  dispatchedAt?: string;
+  deliveredAt?: string;
 }

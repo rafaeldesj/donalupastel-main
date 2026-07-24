@@ -406,6 +406,7 @@ export const DeliveryActive = () => {
         deliveryUid: user?.uid,
         deliveryName: user?.displayName || user?.email || 'Entregador',
         deliveryCoords: { lat: DONA_LU_COORDS[0], lng: DONA_LU_COORDS[1] },
+        dispatchedAt: new Date().toISOString(),
       });
     } catch (err) {
       console.error('Erro ao aceitar pedido:', err);

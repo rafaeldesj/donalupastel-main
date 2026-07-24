@@ -455,7 +455,7 @@ export const ClientDashboard = ({
       const q = query(
         collection(db, 'orders'),
         where('clientUid', '==', user.uid),
-        where('status', 'in', ['pending', 'preparing', 'ready', 'delivering'])
+        where('status', 'in', ['pending', 'preparing', 'prepared', 'ready', 'delivering'])
       );
       const querySnapshot = await getDocs(q);
       const updatePromises = querySnapshot.docs.map(orderDoc => {
