@@ -285,7 +285,7 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
   }
 
   let individualSlipsHtml = '';
-  order.items.forEach((item, index) => {
+  order.items.forEach(item => {
     let itemAddressHtml = '';
     if (order.orderType === 'delivery' && order.address) {
       itemAddressHtml = `
@@ -294,10 +294,15 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
       `;
     }
 
-    const spacingStyle = index < order.items.length - 1 ? 'margin-bottom: 10em; border-bottom: 1px dashed #000; padding-bottom: 20px;' : '';
+    const spacerHtml = `
+      <div style="height: 10em; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box;">
+        <div style="width: 100%; border-top: 1px dashed #000;"></div>
+      </div>
+    `;
 
     individualSlipsHtml += `
-      <div style="margin-top: 40px; font-family: 'Courier New', Courier, monospace; font-size: 11px; ${spacingStyle}">
+      ${spacerHtml}
+      <div style="font-family: 'Courier New', Courier, monospace; font-size: 11px;">
         <div class="bold">================================</div>
         <div><strong>PEDIDO:</strong> ${seq}</div>
         <div><strong>CLIENTE:</strong> ${order.clientName}</div>
@@ -637,10 +642,16 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
   writeLine('Dona Lu - Feito com Amor');
 
   // 9. Individual Item slips for Kitchen/Delivery
-  order.items.forEach((item, index) => {
-    buffer.push(...LINE_FEED, ...LINE_FEED);
-    buffer.push(...ALIGN_LEFT, ...BOLD_ON);
+  order.items.forEach(item => {
+    // Print 10 lines of space with a dashed line on the 5th line BEFORE each item
+    for (let i = 0; i < 4; i++) {
+      buffer.push(...LINE_FEED);
+    }
     const maxChars = settings.paperSize === '80mm' ? 48 : 32;
+    buffer.push(...ALIGN_CENTER);
+    writeLine('- '.repeat(maxChars / 2).trim());
+    buffer.push(...ALIGN_LEFT, ...BOLD_ON);
+
     writeLine('='.repeat(maxChars));
     writeLine(`PEDIDO: ${seq}`);
     writeLine(`CLIENTE: ${order.clientName}`);
@@ -664,13 +675,7 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
       writeLine(`   ${wrappedName[i]}`);
     }
     
-    // Do not add 10 blank lines to the last item
-    if (index < order.items.length - 1) {
-      // 10 blank lines between slips
-      for (let i = 0; i < 10; i++) {
-        buffer.push(...LINE_FEED);
-      }
-    }
+    // The spacer is printed BEFORE the next item, so no spacing logic is needed at the end of the item loop!
   });
 
   buffer.push(...LINE_FEED, ...LINE_FEED, ...LINE_FEED, ...LINE_FEED);
