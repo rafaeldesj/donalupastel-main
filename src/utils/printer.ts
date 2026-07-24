@@ -284,8 +284,19 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
     }
   }
 
+  const foods = order.items.filter(item => item.category !== 'Bebidas');
+  const beverages = order.items.filter(item => item.category === 'Bebidas');
+
+  const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
+  foods.forEach(item => {
+    slips.push({ type: 'food', items: [item] });
+  });
+  if (beverages.length > 0) {
+    slips.push({ type: 'beverages', items: beverages });
+  }
+
   let individualSlipsHtml = '';
-  order.items.forEach(item => {
+  slips.forEach(slip => {
     let itemAddressHtml = '';
     if (order.orderType === 'delivery' && order.address) {
       itemAddressHtml = `
@@ -300,6 +311,15 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
       </div>
     `;
 
+    let itemsListHtml = '';
+    slip.items.forEach(item => {
+      itemsListHtml += `
+        <div style="font-size: 12px; margin-top: 6px;">
+          ${item.quantity}x <strong>${item.name}</strong>
+        </div>
+      `;
+    });
+
     individualSlipsHtml += `
       ${spacerHtml}
       <div style="font-family: 'Courier New', Courier, monospace; font-size: 11px;">
@@ -309,9 +329,7 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
         ${order.clientPhone ? `<div><strong>TEL:</strong> ${order.clientPhone}</div>` : ''}
         ${itemAddressHtml}
         <div class="bold">--------------------------------</div>
-        <div style="font-size: 12px; margin-top: 6px;">
-          ${item.quantity}x <strong>${item.name}</strong>
-        </div>
+        ${itemsListHtml}
       </div>
     `;
   });
@@ -642,7 +660,18 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
   writeLine('Dona Lu - Feito com Amor');
 
   // 9. Individual Item slips for Kitchen/Delivery
-  order.items.forEach(item => {
+  const foods = order.items.filter(item => item.category !== 'Bebidas');
+  const beverages = order.items.filter(item => item.category === 'Bebidas');
+
+  const slips: { type: 'food' | 'beverages'; items: typeof order.items }[] = [];
+  foods.forEach(item => {
+    slips.push({ type: 'food', items: [item] });
+  });
+  if (beverages.length > 0) {
+    slips.push({ type: 'beverages', items: beverages });
+  }
+
+  slips.forEach(slip => {
     // Print 10 lines of space with a dashed line on the 5th line BEFORE each item
     for (let i = 0; i < 4; i++) {
       buffer.push(...LINE_FEED);
@@ -667,15 +696,15 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
     writeLine('-'.repeat(maxChars));
     buffer.push(...BOLD_OFF);
 
-    // Print item details (with name wrapping)
-    const qtyStr = `${item.quantity}x `;
-    const wrappedName = wrapText(item.name, maxChars - 3);
-    writeLine(`${qtyStr}${wrappedName[0]}`);
-    for (let i = 1; i < wrappedName.length; i++) {
-      writeLine(`   ${wrappedName[i]}`);
-    }
-    
-    // The spacer is printed BEFORE the next item, so no spacing logic is needed at the end of the item loop!
+    // Print all items in the slip (with name wrapping)
+    slip.items.forEach(item => {
+      const qtyStr = `${item.quantity}x `;
+      const wrappedName = wrapText(item.name, maxChars - 3);
+      writeLine(`${qtyStr}${wrappedName[0]}`);
+      for (let i = 1; i < wrappedName.length; i++) {
+        writeLine(`   ${wrappedName[i]}`);
+      }
+    });
   });
 
   buffer.push(...LINE_FEED, ...LINE_FEED, ...LINE_FEED, ...LINE_FEED);
