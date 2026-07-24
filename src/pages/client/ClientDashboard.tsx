@@ -233,7 +233,7 @@ export const ClientDashboard = ({
     return hasTable ? 'dine_in_table' : 'delivery';
   });
   const [tableNumber, setTableNumber] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro' | 'pagar_final' | 'google_pay' | 'debito_point' | 'credito_point'>('pix');
+  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credito' | 'debito' | 'dinheiro' | 'pagar_final' | 'google_pay' | 'debito_point' | 'credito_point' | 'cartao'>('pix');
   const [changeFor, setChangeFor] = useState('');
   const [noChangeNeeded, setNoChangeNeeded] = useState(false);
   const [showOrderSummary, setShowOrderSummary] = useState(false);
@@ -279,7 +279,7 @@ export const ClientDashboard = ({
   const [showCloseBillModal, setShowCloseBillModal] = useState(false);
   const [tableOrders, setTableOrders] = useState<any[]>([]);
   const [loadingBill, setLoadingBill] = useState(false);
-  const [billPaymentMethod, setBillPaymentMethod] = useState<'pix' | 'credito' | 'dinheiro' | 'debito' | 'google_pay' | 'debito_point' | 'credito_point'>('pix');
+  const [billPaymentMethod, setBillPaymentMethod] = useState<'pix' | 'credito' | 'dinheiro' | 'debito' | 'google_pay' | 'debito_point' | 'credito_point' | 'cartao'>('pix');
   const [billChangeFor, setBillChangeFor] = useState('');
   const [billNoChangeNeeded, setBillNoChangeNeeded] = useState(false);
   const [billSubmitting, setBillSubmitting] = useState(false);
@@ -579,7 +579,8 @@ export const ClientDashboard = ({
       const unpaid = tableOrders.filter(o => 
         o.paymentMethod === 'pagar_final' || 
         o.paymentMethod === 'dinheiro' || 
-        o.paymentMethod === 'debito'
+        o.paymentMethod === 'debito' ||
+        o.paymentMethod === 'cartao'
       );
       const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
 
@@ -627,7 +628,8 @@ export const ClientDashboard = ({
       const unpaid = tableOrders.filter(o => 
         o.paymentMethod === 'pagar_final' || 
         o.paymentMethod === 'dinheiro' || 
-        o.paymentMethod === 'debito'
+        o.paymentMethod === 'debito' ||
+        o.paymentMethod === 'cartao'
       );
       const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
 
@@ -737,7 +739,8 @@ export const ClientDashboard = ({
       const unpaid = tableOrders.filter(o => 
         o.paymentMethod === 'pagar_final' || 
         o.paymentMethod === 'dinheiro' || 
-        o.paymentMethod === 'debito'
+        o.paymentMethod === 'debito' ||
+        o.paymentMethod === 'cartao'
       );
       const amountToPay = unpaid.reduce((sum, o) => sum + o.total, 0);
 
@@ -817,7 +820,8 @@ export const ClientDashboard = ({
       const unpaid = tableOrders.filter(o => 
         o.paymentMethod === 'pagar_final' || 
         o.paymentMethod === 'dinheiro' || 
-        o.paymentMethod === 'debito'
+        o.paymentMethod === 'debito' ||
+        o.paymentMethod === 'cartao'
       );
 
       const batchPromises = unpaid.map(order => 
@@ -830,7 +834,10 @@ export const ClientDashboard = ({
       );
       await Promise.all(batchPromises);
 
-      alert(`Solicitação de fechamento enviada ao Caixa! Por favor, dirija-se ao balcão para pagar em ${billPaymentMethod === 'dinheiro' ? 'Dinheiro' : 'Débito'}.`);
+      let methodLabel = 'Dinheiro';
+      if (billPaymentMethod === 'debito') methodLabel = 'Débito';
+      if (billPaymentMethod === 'cartao') methodLabel = 'Cartão';
+      alert(`Solicitação de fechamento enviada ao Caixa! Por favor, dirija-se ao balcão para pagar em ${methodLabel}.`);
       setShowCloseBillModal(false);
     } catch (err: any) {
       console.error(err);
@@ -1419,6 +1426,7 @@ export const ClientDashboard = ({
     pagar_final: 'Pagar no Final (na Mesa) 🍽️',
     debito_point: 'Débito Maquininha 💴',
     credito_point: 'Crédito Maquininha 💳',
+    cartao: 'Cartão 💳',
   };
 
   const handleOpenSummary = () => {
@@ -2207,7 +2215,7 @@ export const ClientDashboard = ({
         setShowPixLightbox(true);
         setSubmitting(false);
         return;
-      } else if (paymentMethod === 'dinheiro' || paymentMethod === 'debito' || paymentMethod === 'pagar_final') {
+      } else if (paymentMethod === 'dinheiro' || paymentMethod === 'debito' || paymentMethod === 'pagar_final' || paymentMethod === 'cartao') {
         if (orderType === 'dine_in_table') {
           finalStatus = 'pending';
         } else {
@@ -3408,7 +3416,8 @@ export const ClientDashboard = ({
                       ['debito_point', 'Débito Maquininha 💴'],
                       ['credito_point', 'Crédito Maquininha 💳'],
                       ['pagar_final', 'Pagar no Final 🍽️'],
-                      ['dinheiro', 'Dinheiro 💵']
+                      ['dinheiro', 'Dinheiro 💵'],
+                      ['cartao', 'Cartão 💳']
                     ];
                   } else {
                     methods = [
@@ -3417,7 +3426,8 @@ export const ClientDashboard = ({
                       ['google_pay', 'Google Pay 📱'],
                       ['debito_point', 'Débito Maquininha 💴'],
                       ['credito_point', 'Crédito Maquininha 💳'],
-                      ['dinheiro', 'Dinheiro 💵']
+                      ['dinheiro', 'Dinheiro 💵'],
+                      ['cartao', 'Cartão 💳']
                     ];
                   }
                   return methods.filter(([val]) => !disabled.includes(val)) as any;
@@ -4714,7 +4724,8 @@ export const ClientDashboard = ({
               const unpaidOrders = tableOrders.filter(o => 
                 o.paymentMethod === 'pagar_final' || 
                 o.paymentMethod === 'dinheiro' || 
-                o.paymentMethod === 'debito'
+                o.paymentMethod === 'debito' ||
+                o.paymentMethod === 'cartao'
               );
               const totalToPay = unpaidOrders.reduce((sum, o) => sum + o.total, 0);
 
@@ -4725,12 +4736,16 @@ export const ClientDashboard = ({
                     <span style={{ fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pedidos Realizados</span>
                     {tableOrders.map((order) => {
                       const isPaid = order.paymentMethod === 'pix' || order.paymentMethod === 'credito';
+                      let methodText = 'Pagar no Final';
+                      if (order.paymentMethod === 'dinheiro') methodText = 'Dinheiro';
+                      if (order.paymentMethod === 'debito') methodText = 'Débito';
+                      if (order.paymentMethod === 'cartao') methodText = 'Cartão';
                       return (
                         <div key={order.id} style={{ padding: '0.6rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '10px', fontSize: '0.82rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                             <span style={{ fontWeight: 700 }}>Pedido #{order.dailySeq || '---'}</span>
                             <span style={{ fontWeight: 700, color: isPaid ? '#10b981' : 'var(--primary-gold)' }}>
-                              R$ {order.total.toFixed(2).replace('.', ',')} {isPaid ? '(Pago)' : '(Pagar no Final)'}
+                              R$ {order.total.toFixed(2).replace('.', ',')} {isPaid ? '(Pago)' : `(${methodText})`}
                             </span>
                           </div>
                           <div style={{ color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
@@ -4809,7 +4824,8 @@ export const ClientDashboard = ({
                               ['google_pay', 'Google Pay 📱'],
                               ['debito_point', 'Débito Maquininha 💴'],
                               ['credito_point', 'Crédito Maquininha 💳'],
-                              ['dinheiro', 'Dinheiro 💵']
+                              ['dinheiro', 'Dinheiro 💵'],
+                              ['cartao', 'Cartão 💳']
                             ];
                             return methods.filter(([val]) => !disabled.includes(val)) as any;
                           })().map(([val, label]: [string, string]) => {

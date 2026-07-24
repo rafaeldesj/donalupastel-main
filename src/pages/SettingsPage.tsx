@@ -1078,13 +1078,14 @@ export const SettingsPage = () => {
 
               <form onSubmit={handleSavePaymentsConfig}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
-                  {[
+                   {[
                     { id: 'pix', name: 'Pix', desc: 'Pagamento instantâneo via QR Code gerado no Mercado Pago.', label: 'Pix 🟡' },
                     { id: 'credito', name: 'Crédito Online', desc: 'Pagamento via cartão de crédito online no checkout.', label: 'Crédito Online 💳' },
                     { id: 'google_pay', name: 'Google Pay', desc: 'Carteira digital rápida integrada.', label: 'Google Pay 📱' },
                     { id: 'debito_point', name: 'Débito Maquininha', desc: 'Débito presencial via maquininha Point.', label: 'Débito Maquininha 💴' },
                     { id: 'credito_point', name: 'Crédito Maquininha', desc: 'Crédito presencial via maquininha Point.', label: 'Crédito Maquininha 💳' },
                     { id: 'dinheiro', name: 'Dinheiro', desc: 'Pagamento em dinheiro vivo.', label: 'Dinheiro 💵' },
+                    { id: 'cartao', name: 'Cartão', desc: 'Pagamento presencial via cartão (débito/crédito) com baixa manual pelo operador.', label: 'Cartão 💳' },
                     { id: 'pagar_final', name: 'Pagar no Final', desc: 'Permitir que o cliente pague ao final do atendimento na mesa.', label: 'Pagar no Final 🍽️' }
                   ].map((method) => {
                     const map = storeConfig?.disabledPaymentMethodsByOrderType || {};
