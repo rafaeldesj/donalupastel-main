@@ -552,7 +552,8 @@ export const TableMap = () => {
   const getOrderStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'pending': return { bg: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' };
-      case 'preparing': return { bg: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' };
+      case 'preparing':
+      case 'prepared': return { bg: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' };
       case 'ready': return { bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' };
       case 'delivering':
       case 'aguardando_caixa':
@@ -565,7 +566,8 @@ export const TableMap = () => {
   const getOrderStatusLabel = (status: string) => {
     switch (status) {
       case 'pending': return 'Pendente';
-      case 'preparing': return 'Preparando';
+      case 'preparing': 
+      case 'prepared': return 'Preparando';
       case 'ready': return 'Pronto';
       case 'delivering': return 'Entregue na Mesa';
       case 'aguardando_caixa': return 'Fechando Conta';

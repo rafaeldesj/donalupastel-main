@@ -498,7 +498,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     }
 
     const hasPending = orders.some(o => o.status === 'pending');
-    const hasPreparing = orders.some(o => o.status === 'preparing');
+    const hasPreparing = orders.some(o => o.status === 'prepared');
 
     // Inicializa os áudios se ainda não existirem
     if (!pendingAudioRef.current) {
@@ -535,7 +535,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     // ---- Ciclo do som de PEDIDO PRONTO (a cada 30s) ----
     const triggerPreparingSoundCycle = () => {
       if (filter !== 'cook') return;
-      if (!orders.some(o => o.status === 'preparing')) return;
+      if (!orders.some(o => o.status === 'prepared')) return;
 
       isPreparingSoundPlayingRef.current = true;
 
@@ -562,7 +562,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
       isPreparingSoundPlayingRef.current = false;
 
       const stillHasPending = orders.some(o => o.status === 'pending');
-      const stillHasPreparing = orders.some(o => o.status === 'preparing');
+      const stillHasPreparing = orders.some(o => o.status === 'prepared');
 
       // Retoma o alarme de novo pedido imediatamente após o de preparo terminar
       if (stillHasPending) {
@@ -628,7 +628,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
       }
 
       const nowHasPending = orders.some(o => o.status === 'pending');
-      const nowHasPreparing = orders.some(o => o.status === 'preparing');
+      const nowHasPreparing = orders.some(o => o.status === 'prepared');
 
       // Reinicia o ciclo de novo pedido se deveria estar ativo mas não está
       if (nowHasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
@@ -651,7 +651,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
       }
 
       const nowHasPending = orders.some(o => o.status === 'pending');
-      const nowHasPreparing = orders.some(o => o.status === 'preparing');
+      const nowHasPreparing = orders.some(o => o.status === 'prepared');
 
       // Reinicia qualquer ciclo que o browser possa ter matado enquanto a aba estava inativa
       if (nowHasPreparing && !isPreparingSoundPlayingRef.current && preparingAudioRef.current?.paused && !preparingTimeoutRef.current) {
@@ -705,9 +705,9 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     try {
       const orderDocRef = doc(db, 'orders', orderId);
       const updates: any = { status: newStatus };
-      if (newStatus === 'ready') {
+      if (newStatus === 'prepared' || newStatus === 'ready') {
         const order = orders.find(o => o.id === orderId);
-        if (order) {
+        if (order && !order.kitchenFinishedAt) {
           const finishedAt = new Date().toISOString();
           const enteredAt = order.kitchenEnteredAt || order.createdAt;
           updates.kitchenFinishedAt = finishedAt;
@@ -813,7 +813,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   };
 
   // Filtragem de pedidos
-  const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing');
+  const kitchenOrders = orders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'prepared');
   const attendingOrders = orders.filter(o => o.status === 'ready');
   const cashierOrders = orders.filter(o => o.status === 'ready');
   const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento' || o.status === 'awaiting_payment');
@@ -937,8 +937,15 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                       <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                           <strong style={{ fontSize: '1.15rem' }}>{formatOrderHeader(order)}</strong>
-                          <span className="order-badge-status" style={{ backgroundColor: order.status === 'preparing' ? '#d9770615' : 'rgba(255,255,255,0.05)', color: order.status === 'preparing' ? 'var(--primary-gold)' : 'var(--text-secondary)' }}>
-                             {order.status === 'preparing' ? 'Preparando' : 'Pendente'}
+                          <span className="order-badge-status" style={{ 
+                            backgroundColor: 
+                              order.status === 'prepared' ? '#10b98115' :
+                              order.status === 'preparing' ? '#d9770615' : 'rgba(255,255,255,0.05)', 
+                            color: 
+                              order.status === 'prepared' ? '#10b981' :
+                              order.status === 'preparing' ? 'var(--primary-gold)' : 'var(--text-secondary)' 
+                          }}>
+                             {order.status === 'prepared' ? 'Pronto na Cozinha' : order.status === 'preparing' ? 'Preparando' : 'Pendente'}
                           </span>
                         </div>
                         <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
@@ -972,9 +979,13 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                           <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'preparing')} className="btn-small btn-primary" style={{ width: '100%', padding: '0.6rem' }}>
                             <Play size={14} /> Começar Preparo
                           </button>
-                        ) : (
-                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'ready')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
+                        ) : order.status === 'preparing' ? (
+                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'prepared')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem' }}>
                             <Check size={14} /> Concluído (Enviar ao Balcão)
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => order.id && updateOrderStatus(order.id, 'ready')} className="btn-small btn-success" style={{ width: '100%', padding: '0.6rem', background: '#3b82f6', borderColor: '#3b82f6' }}>
+                            <Check size={14} /> Retirar para o Balcão
                           </button>
                         )}
                         <button 

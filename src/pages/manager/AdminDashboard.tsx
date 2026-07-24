@@ -39,7 +39,7 @@ export const AdminDashboard = () => {
   const billingToday = completedOrders.reduce((sum, order) => sum + order.total, 0);
   
   const pendingPrepCount = orders.filter(o => o.status === 'pending').length;
-  const inPrepCount = orders.filter(o => o.status === 'preparing').length;
+  const inPrepCount = orders.filter(o => o.status === 'preparing' || o.status === 'prepared').length;
 
   // Filtra pedidos que têm tempo de preparo registrado para calcular a média
   const ordersWithPrepTime = orders.filter(o => o.kitchenDurationSeconds !== undefined && o.kitchenDurationSeconds > 0);
@@ -138,12 +138,12 @@ export const AdminDashboard = () => {
                           backgroundColor: 
                             order.status === 'completed' || order.status === 'delivering' ? '#05966920' : 
                             order.status === 'ready' ? '#0284c720' : 
-                            order.status === 'preparing' ? '#d9770620' : 
+                            order.status === 'preparing' || order.status === 'prepared' ? '#d9770620' : 
                             order.status === 'cancelled' ? '#ef444420' : '#4b556320', 
                           color: 
                             order.status === 'completed' || order.status === 'delivering' ? '#10b981' : 
                             order.status === 'ready' ? '#3b82f6' : 
-                            order.status === 'preparing' ? 'var(--primary-gold)' : 
+                            order.status === 'preparing' || order.status === 'prepared' ? 'var(--primary-gold)' : 
                             order.status === 'cancelled' ? '#f87171' : 'var(--text-secondary)',
                           fontSize: '0.7rem',
                           padding: '0.1rem 0.5rem'
@@ -152,6 +152,7 @@ export const AdminDashboard = () => {
                             switch (order.status) {
                               case 'pending': return 'PENDENTE';
                               case 'preparing': return 'EM PREPARO';
+                              case 'prepared': return 'PREPARADO';
                               case 'ready': return 'PRONTO';
                               case 'delivering': 
                                 return order.orderType === 'dine_in_table' ? 'ENTREGUE NA MESA' : 'EM ROTA';

@@ -849,7 +849,7 @@ export const OrderTracking = () => {
       ];
 
       let activeIndex = 0;
-      if (order.status === 'preparing') activeIndex = 1;
+      if (order.status === 'preparing' || order.status === 'prepared') activeIndex = 1;
       else if (order.status === 'ready') activeIndex = 2;
       else if (order.status === 'delivering') activeIndex = 3;
       else if (order.status === 'completed') activeIndex = 4;
@@ -867,7 +867,7 @@ export const OrderTracking = () => {
       ];
 
       let activeIndex = 0;
-      if (order.status === 'preparing') activeIndex = 1;
+      if (order.status === 'preparing' || order.status === 'prepared') activeIndex = 1;
       else if (order.status === 'ready') activeIndex = 2;
       else if (order.status === 'delivering' || order.status === 'completed') activeIndex = 3;
 
@@ -881,7 +881,8 @@ export const OrderTracking = () => {
   const getStatusText = (status: string, orderType: string) => {
     switch (status) {
       case 'pending': return 'Recebido pela cozinha';
-      case 'preparing': return 'Sendo preparado';
+      case 'preparing': 
+      case 'prepared': return 'Sendo preparado';
       case 'ready': 
         if (orderType === 'delivery') return 'Pronto na expedição';
         if (orderType === 'dine_in' || orderType === 'dine_in_table') return 'Pronto! Servido na mesa.';
