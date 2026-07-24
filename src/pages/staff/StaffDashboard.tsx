@@ -1,6 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import entrouPedidoSound from '../../sounds/entrou-pedido.mp3';
-import pedidoProntoSound from '../../sounds/pedido-pronto.mp3';
 import { useAuth } from '../../hooks/useAuth';
 import { ChefHat, CreditCard, Bell, Play, Check, Navigation, TrendingUp, DollarSign, Clock, Printer } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, orderBy, addDoc, getDocs, where, deleteDoc } from 'firebase/firestore';
@@ -32,8 +30,6 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const preparingAudioRef = useRef<HTMLAudioElement | null>(null);
   const pendingTimeoutRef = useRef<any>(null);
   const preparingTimeoutRef = useRef<any>(null);
-  const isPendingSoundPlayingRef = useRef<boolean>(false);
-  const isPreparingSoundPlayingRef = useRef<boolean>(false);
   const watchdogIntervalRef = useRef<any>(null);
   const silentAudioCtxRef = useRef<AudioContext | null>(null);
   const [volumePending, setVolumePending] = useState<number>(0.8);
@@ -527,206 +523,10 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   }, [filter]);
 
 
-  // Controle de áudio da cozinha (alarmes de novos pedidos e em preparo)
+  // Controle de áudio da cozinha movido para o App.tsx global
   useEffect(() => {
-    // Se não estiver visualizando a fila da cozinha, para tudo e limpa as referências
-    if (filter !== 'cook') {
-      if (pendingAudioRef.current) {
-        pendingAudioRef.current.pause();
-        pendingAudioRef.current = null;
-      }
-      if (preparingAudioRef.current) {
-        preparingAudioRef.current.pause();
-        preparingAudioRef.current = null;
-      }
-      if (pendingTimeoutRef.current) {
-        clearTimeout(pendingTimeoutRef.current);
-        pendingTimeoutRef.current = null;
-      }
-      if (preparingTimeoutRef.current) {
-        clearTimeout(preparingTimeoutRef.current);
-        preparingTimeoutRef.current = null;
-      }
-      isPendingSoundPlayingRef.current = false;
-      isPreparingSoundPlayingRef.current = false;
-      return;
-    }
-
-    const hasPending = orders.some(o => o.status === 'pending');
-    const hasPreparing = orders.some(o => o.status === 'prepared');
-
-    // Inicializa os áudios se ainda não existirem
-    if (!pendingAudioRef.current) {
-      pendingAudioRef.current = new Audio(entrouPedidoSound);
-      pendingAudioRef.current.loop = false; // Toca uma vez por ciclo; a repetição é gerenciada pelo timer
-      pendingAudioRef.current.volume = volumePending;
-    }
-    if (!preparingAudioRef.current) {
-      preparingAudioRef.current = new Audio(pedidoProntoSound);
-      preparingAudioRef.current.loop = false;
-      preparingAudioRef.current.volume = volumePreparing;
-    }
-
-    // Se não houver mais pedidos pendentes, cancela o ciclo de alarme de novo pedido
-    if (!hasPending) {
-      if (pendingAudioRef.current) pendingAudioRef.current.pause();
-      if (pendingTimeoutRef.current) {
-        clearTimeout(pendingTimeoutRef.current);
-        pendingTimeoutRef.current = null;
-      }
-      isPendingSoundPlayingRef.current = false;
-    }
-
-    // Se não houver mais pedidos em preparo, cancela o ciclo de alarme de preparo
-    if (!hasPreparing) {
-      if (preparingAudioRef.current) preparingAudioRef.current.pause();
-      if (preparingTimeoutRef.current) {
-        clearTimeout(preparingTimeoutRef.current);
-        preparingTimeoutRef.current = null;
-      }
-      isPreparingSoundPlayingRef.current = false;
-    }
-
-    // ---- Ciclo do som de PEDIDO PRONTO (a cada 30s) ----
-    const triggerPreparingSoundCycle = () => {
-      if (filter !== 'cook') return;
-      if (!orders.some(o => o.status === 'prepared')) return;
-
-      isPreparingSoundPlayingRef.current = true;
-
-      // Interrompe o alarme de novo pedido enquanto o de preparo toca
-      if (pendingAudioRef.current) {
-        pendingAudioRef.current.pause();
-        isPendingSoundPlayingRef.current = false;
-        if (pendingTimeoutRef.current) {
-          clearTimeout(pendingTimeoutRef.current);
-          pendingTimeoutRef.current = null;
-        }
-      }
-
-      if (preparingAudioRef.current) {
-        preparingAudioRef.current.play().catch(err => {
-          console.warn("Autoplay do som 'preparando' bloqueado:", err);
-          handlePreparingSoundEnded();
-        });
-        preparingAudioRef.current.onended = handlePreparingSoundEnded;
-      }
-    };
-
-    const handlePreparingSoundEnded = () => {
-      isPreparingSoundPlayingRef.current = false;
-
-      const stillHasPending = orders.some(o => o.status === 'pending');
-      const stillHasPreparing = orders.some(o => o.status === 'prepared');
-
-      // Retoma o alarme de novo pedido imediatamente após o de preparo terminar
-      if (stillHasPending) {
-        triggerPendingSoundCycle();
-      }
-
-      // Agenda o próximo toque do alarme de preparo em 30 segundos
-      if (stillHasPreparing) {
-        if (preparingTimeoutRef.current) clearTimeout(preparingTimeoutRef.current);
-        preparingTimeoutRef.current = setTimeout(triggerPreparingSoundCycle, 30000);
-      }
-    };
-
-    // ---- Ciclo do som de NOVO PEDIDO (toca imediatamente e depois a cada 15s) ----
-    const triggerPendingSoundCycle = () => {
-      if (filter !== 'cook') return;
-      if (!orders.some(o => o.status === 'pending')) return;
-      // Não toca se o alarme de preparo estiver ativo
-      if (isPreparingSoundPlayingRef.current) return;
-
-      isPendingSoundPlayingRef.current = true;
-
-      if (pendingAudioRef.current) {
-        pendingAudioRef.current.currentTime = 0;
-        pendingAudioRef.current.play().catch(err => {
-          console.warn("Autoplay do som 'novo pedido' bloqueado:", err);
-          handlePendingSoundEnded();
-        });
-        pendingAudioRef.current.onended = handlePendingSoundEnded;
-      }
-    };
-
-    const handlePendingSoundEnded = () => {
-      isPendingSoundPlayingRef.current = false;
-
-      const stillHasPending = orders.some(o => o.status === 'pending');
-      if (stillHasPending && !isPreparingSoundPlayingRef.current) {
-        if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
-        pendingTimeoutRef.current = setTimeout(triggerPendingSoundCycle, 15000);
-      }
-    };
-
-    // --- CONTROLE DE EXECUÇÃO ---
-
-    // Inicia o ciclo de preparo se ainda não estiver rodando
-    if (hasPreparing && preparingAudioRef.current && preparingAudioRef.current.paused && !preparingTimeoutRef.current) {
-      triggerPreparingSoundCycle();
-    }
-
-    // Inicia o ciclo de novo pedido se ainda não estiver rodando
-    if (hasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
-      triggerPendingSoundCycle();
-    }
-
-    // --- WATCHDOG: verifica a cada 20s se os ciclos continuam vivos ---
-    if (watchdogIntervalRef.current) clearInterval(watchdogIntervalRef.current);
-    watchdogIntervalRef.current = setInterval(() => {
-      if (filter !== 'cook') return;
-
-      // Retoma o AudioContext silencioso se o browser tiver suspendido
-      if (silentAudioCtxRef.current && silentAudioCtxRef.current.state === 'suspended') {
-        silentAudioCtxRef.current.resume().catch(() => {});
-      }
-
-      const nowHasPending = orders.some(o => o.status === 'pending');
-      const nowHasPreparing = orders.some(o => o.status === 'prepared');
-
-      // Reinicia o ciclo de novo pedido se deveria estar ativo mas não está
-      if (nowHasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
-        triggerPendingSoundCycle();
-      }
-
-      // Reinicia o ciclo de pedido pronto se deveria estar ativo mas não está
-      if (nowHasPreparing && !isPreparingSoundPlayingRef.current && preparingAudioRef.current?.paused && !preparingTimeoutRef.current) {
-        triggerPreparingSoundCycle();
-      }
-    }, 20000);
-
-    // --- PAGE VISIBILITY: retoma os ciclos quando a aba volta ao foco ---
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible' || filter !== 'cook') return;
-
-      // Retoma o AudioContext silencioso
-      if (silentAudioCtxRef.current && silentAudioCtxRef.current.state === 'suspended') {
-        silentAudioCtxRef.current.resume().catch(() => {});
-      }
-
-      const nowHasPending = orders.some(o => o.status === 'pending');
-      const nowHasPreparing = orders.some(o => o.status === 'prepared');
-
-      // Reinicia qualquer ciclo que o browser possa ter matado enquanto a aba estava inativa
-      if (nowHasPreparing && !isPreparingSoundPlayingRef.current && preparingAudioRef.current?.paused && !preparingTimeoutRef.current) {
-        triggerPreparingSoundCycle();
-      }
-      if (nowHasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
-        triggerPendingSoundCycle();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (watchdogIntervalRef.current) {
-        clearInterval(watchdogIntervalRef.current);
-        watchdogIntervalRef.current = null;
-      }
-    };
-  }, [orders, filter]);
+    // Desativado localmente para evitar reprodução duplicada
+  }, []);
 
   const checkAndFreeTable = async (orderTableNumber?: string | null, orderIdToExclude?: string) => {
     if (!orderTableNumber) return;

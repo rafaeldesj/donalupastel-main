@@ -5,7 +5,11 @@ import { AuthButton } from './components/common/AuthButton';
 import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown, Grid, Boxes, MessageCircle } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 import logoDonaluMobile from './assets/logo_donalu_mobile.png';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, orderBy } from 'firebase/firestore';
+import entrouPedidoSound from './sounds/entrou-pedido.mp3';
+import pedidoProntoSound from './sounds/pedido-pronto.mp3';
+import { printOrder, getPrinterSettings } from './utils/printer';
+import type { OrderDocument } from './types/order';
 import { db } from './config/firebase';
 import { VirtualAssistantBubble } from './components/VirtualAssistantBubble';
 import { ClientSupportChat } from './components/ClientSupportChat';
@@ -39,6 +43,275 @@ const MainLayout = () => {
   const [isVisitor, setIsVisitor] = useState<boolean>(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+
+  const [pulseKitchenMenu, setPulseKitchenMenu] = useState(false);
+  const [orders, setOrders] = useState<OrderDocument[]>([]);
+
+  const pendingAudioRef = useRef<HTMLAudioElement | null>(null);
+  const preparingAudioRef = useRef<HTMLAudioElement | null>(null);
+  const pendingTimeoutRef = useRef<any>(null);
+  const preparingTimeoutRef = useRef<any>(null);
+  const watchdogIntervalRef = useRef<any>(null);
+  const silentAudioCtxRef = useRef<AudioContext | null>(null);
+
+  const isPendingSoundPlayingRef = useRef(false);
+  const isPreparingSoundPlayingRef = useRef(false);
+
+  const role = userData?.role || 'client';
+  const staff = userData?.staffFunctions;
+  const isStaff = ['developer', 'owner', 'manager', 'staff'].includes(role);
+
+  // Pulse reset when kitchen view is active
+  useEffect(() => {
+    if (activeView === 'cozinha') {
+      setPulseKitchenMenu(false);
+    }
+  }, [activeView]);
+
+  // Keep silent AudioContext active to prevent browser tab sleep/freeze on audio
+  useEffect(() => {
+    if (!isStaff) return;
+    try {
+      if (!silentAudioCtxRef.current || silentAudioCtxRef.current.state === 'closed') {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(0, ctx.currentTime);
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        oscillator.start();
+        silentAudioCtxRef.current = ctx;
+      } else if (silentAudioCtxRef.current.state === 'suspended') {
+        silentAudioCtxRef.current.resume();
+      }
+    } catch {
+      // non-critical
+    }
+    return () => {
+      if (silentAudioCtxRef.current && silentAudioCtxRef.current.state !== 'closed') {
+        silentAudioCtxRef.current.close();
+        silentAudioCtxRef.current = null;
+      }
+    };
+  }, [isStaff]);
+
+  // Global orders real-time listener for background printing and notifications
+  useEffect(() => {
+    if (!user || !isStaff) {
+      if (pendingAudioRef.current) { pendingAudioRef.current.pause(); pendingAudioRef.current = null; }
+      if (preparingAudioRef.current) { preparingAudioRef.current.pause(); preparingAudioRef.current = null; }
+      if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
+      if (preparingTimeoutRef.current) { clearTimeout(preparingTimeoutRef.current); preparingTimeoutRef.current = null; }
+      isPendingSoundPlayingRef.current = false;
+      isPreparingSoundPlayingRef.current = false;
+      return;
+    }
+
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'asc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetched: OrderDocument[] = [];
+      let newOrderDetected = false;
+
+      snapshot.forEach((docSnap) => {
+        fetched.push({ id: docSnap.id, ...docSnap.data() } as OrderDocument);
+      });
+
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const order = { id: change.doc.id, ...change.doc.data() } as OrderDocument;
+          const orderTime = new Date(order.createdAt).getTime();
+          const nowTime = Date.now();
+          if (nowTime - orderTime < 30000 && order.status === 'pending') {
+            newOrderDetected = true;
+            try {
+              const printerSet = getPrinterSettings();
+              if (printerSet.autoPrintOnNew) {
+                printOrder(order).catch(err => console.error("Erro ao auto-imprimir:", err));
+              }
+            } catch (err) {
+              console.error("Erro no auto-print:", err);
+            }
+          }
+        }
+      });
+
+      if (newOrderDetected && activeView !== 'cozinha') {
+        setPulseKitchenMenu(true);
+      }
+
+      setOrders(fetched);
+    }, (error) => {
+      console.error("Erro no background orders listener:", error);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, isStaff, activeView]);
+
+  // Unified global background audio control loop for cook notifications
+  useEffect(() => {
+    if (!isStaff || orders.length === 0) return;
+
+    const canCook = role === 'developer' || role === 'owner' || role === 'manager' || (role === 'staff' && staff?.cook);
+    if (!canCook) return;
+
+    const hasPending = orders.some(o => o.status === 'pending');
+    const hasPreparing = orders.some(o => o.status === 'prepared');
+
+    let volPending = 0.8;
+    let volPreparing = 0.9;
+    try {
+      const savedVolPending = localStorage.getItem('donalu_volume_pending');
+      const savedVolPreparing = localStorage.getItem('donalu_volume_preparing');
+      if (savedVolPending !== null) volPending = parseFloat(savedVolPending);
+      if (savedVolPreparing !== null) volPreparing = parseFloat(savedVolPreparing);
+    } catch {}
+
+    if (!pendingAudioRef.current) {
+      pendingAudioRef.current = new Audio(entrouPedidoSound);
+      pendingAudioRef.current.loop = false;
+      pendingAudioRef.current.volume = volPending;
+    } else {
+      pendingAudioRef.current.volume = volPending;
+    }
+
+    if (!preparingAudioRef.current) {
+      preparingAudioRef.current = new Audio(pedidoProntoSound);
+      preparingAudioRef.current.loop = false;
+      preparingAudioRef.current.volume = volPreparing;
+    } else {
+      preparingAudioRef.current.volume = volPreparing;
+    }
+
+    if (!hasPending) {
+      if (pendingAudioRef.current) pendingAudioRef.current.pause();
+      if (pendingTimeoutRef.current) {
+        clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = null;
+      }
+      isPendingSoundPlayingRef.current = false;
+    }
+
+    if (!hasPreparing) {
+      if (preparingAudioRef.current) preparingAudioRef.current.pause();
+      if (preparingTimeoutRef.current) {
+        clearTimeout(preparingTimeoutRef.current);
+        preparingTimeoutRef.current = null;
+      }
+      isPreparingSoundPlayingRef.current = false;
+    }
+
+    const triggerPreparingSoundCycle = () => {
+      if (!orders.some(o => o.status === 'prepared')) return;
+      isPreparingSoundPlayingRef.current = true;
+
+      if (pendingAudioRef.current) {
+        pendingAudioRef.current.pause();
+        isPendingSoundPlayingRef.current = false;
+        if (pendingTimeoutRef.current) {
+          clearTimeout(pendingTimeoutRef.current);
+          pendingTimeoutRef.current = null;
+        }
+      }
+
+      if (preparingAudioRef.current) {
+        preparingAudioRef.current.play().catch(err => {
+          console.warn("Autoplay preparado bloqueado:", err);
+          handlePreparingSoundEnded();
+        });
+        preparingAudioRef.current.onended = handlePreparingSoundEnded;
+      }
+    };
+
+    const handlePreparingSoundEnded = () => {
+      isPreparingSoundPlayingRef.current = false;
+      const stillHasPending = orders.some(o => o.status === 'pending');
+      const stillHasPreparing = orders.some(o => o.status === 'prepared');
+
+      if (stillHasPending) {
+        triggerPendingSoundCycle();
+      }
+      if (stillHasPreparing) {
+        if (preparingTimeoutRef.current) clearTimeout(preparingTimeoutRef.current);
+        preparingTimeoutRef.current = setTimeout(triggerPreparingSoundCycle, 30000);
+      }
+    };
+
+    const triggerPendingSoundCycle = () => {
+      if (!orders.some(o => o.status === 'pending')) return;
+      if (isPreparingSoundPlayingRef.current) return;
+      isPendingSoundPlayingRef.current = true;
+
+      if (pendingAudioRef.current) {
+        pendingAudioRef.current.currentTime = 0;
+        pendingAudioRef.current.play().catch(err => {
+          console.warn("Autoplay novo pedido bloqueado:", err);
+          handlePendingSoundEnded();
+        });
+        pendingAudioRef.current.onended = handlePendingSoundEnded;
+      }
+    };
+
+    const handlePendingSoundEnded = () => {
+      isPendingSoundPlayingRef.current = false;
+      const stillHasPending = orders.some(o => o.status === 'pending');
+      if (stillHasPending && !isPreparingSoundPlayingRef.current) {
+        if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+        pendingTimeoutRef.current = setTimeout(triggerPendingSoundCycle, 15000);
+      }
+    };
+
+    if (hasPreparing && preparingAudioRef.current && preparingAudioRef.current.paused && !preparingTimeoutRef.current) {
+      triggerPreparingSoundCycle();
+    }
+    if (hasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
+      triggerPendingSoundCycle();
+    }
+
+    if (watchdogIntervalRef.current) clearInterval(watchdogIntervalRef.current);
+    watchdogIntervalRef.current = setInterval(() => {
+      if (silentAudioCtxRef.current && silentAudioCtxRef.current.state === 'suspended') {
+        silentAudioCtxRef.current.resume().catch(() => {});
+      }
+      const nowHasPending = orders.some(o => o.status === 'pending');
+      const nowHasPreparing = orders.some(o => o.status === 'prepared');
+
+      if (nowHasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
+        triggerPendingSoundCycle();
+      }
+      if (nowHasPreparing && !isPreparingSoundPlayingRef.current && preparingAudioRef.current?.paused && !preparingTimeoutRef.current) {
+        triggerPreparingSoundCycle();
+      }
+    }, 20000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (silentAudioCtxRef.current && silentAudioCtxRef.current.state === 'suspended') {
+        silentAudioCtxRef.current.resume().catch(() => {});
+      }
+      const nowHasPending = orders.some(o => o.status === 'pending');
+      const nowHasPreparing = orders.some(o => o.status === 'prepared');
+
+      if (nowHasPreparing && !isPreparingSoundPlayingRef.current && preparingAudioRef.current?.paused && !preparingTimeoutRef.current) {
+        triggerPreparingSoundCycle();
+      }
+      if (nowHasPending && !isPreparingSoundPlayingRef.current && !isPendingSoundPlayingRef.current && !pendingTimeoutRef.current) {
+        triggerPendingSoundCycle();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (watchdogIntervalRef.current) {
+        clearInterval(watchdogIntervalRef.current);
+        watchdogIntervalRef.current = null;
+      }
+    };
+  }, [orders, isStaff, role, staff]);
 
   // Detect Mercado Pago OAuth redirect — store the code and navigate to settings
   useEffect(() => {
@@ -156,8 +429,6 @@ const MainLayout = () => {
     }, 120);
   };
 
-  const role = userData?.role || 'client';
-  const staff = userData?.staffFunctions;
 
   // Atualiza a visualização inicial ativa baseando-se no papel (apenas uma vez ao carregar/fazer login)
   const initialViewSet = useRef(false);
@@ -427,7 +698,7 @@ const getRoleLabel = (r: string): React.ReactNode => {
                         <button
                           key={item.id}
                           type="button"
-                          className={`nav-menu-item ${activeView === item.id ? 'active' : ''}`}
+                          className={`nav-menu-item ${activeView === item.id ? 'active' : ''} ${item.id === 'cozinha' && pulseKitchenMenu ? 'pulse-kitchen-highlight' : ''}`}
                           onClick={() => {
                             setActiveView(item.id);
                             setMobileMenuOpen(false); // Close on click
