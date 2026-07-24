@@ -1411,7 +1411,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
               todayOrders = todayOrders.filter(o => new Date(o.createdAt).getTime() >= cutoffTime);
             } else if (timeFilterHours === 'specific_date') {
               if (specificDateValue) {
-                todayOrders = todayOrders.filter(o => o.createdAt.startsWith(specificDateValue));
+                todayOrders = todayOrders.filter(o => getBusinessDay(o.createdAt) === specificDateValue);
               } else {
                 todayOrders = [];
               }
@@ -2857,7 +2857,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
           filteredOrders = filteredOrders.filter(o => new Date(o.createdAt).getTime() >= cutoffTime);
         } else if (timeFilterHours === 'specific_date') {
           if (specificDateValue) {
-            filteredOrders = filteredOrders.filter(o => o.createdAt.startsWith(specificDateValue));
+            filteredOrders = filteredOrders.filter(o => getBusinessDay(o.createdAt) === specificDateValue);
           } else {
             filteredOrders = [];
           }
