@@ -284,6 +284,33 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
     }
   }
 
+  let individualSlipsHtml = '';
+  order.items.forEach((item, index) => {
+    let itemAddressHtml = '';
+    if (order.orderType === 'delivery' && order.address) {
+      itemAddressHtml = `
+        <div><strong>ENDEREÇO:</strong> ${order.address.street}, ${order.address.number}</div>
+        ${order.address.complement ? `<div><strong>COMPL:</strong> ${order.address.complement}</div>` : ''}
+      `;
+    }
+
+    const spacingStyle = index < order.items.length - 1 ? 'margin-bottom: 10em; border-bottom: 1px dashed #000; padding-bottom: 20px;' : '';
+
+    individualSlipsHtml += `
+      <div style="margin-top: 40px; font-family: 'Courier New', Courier, monospace; font-size: 11px; ${spacingStyle}">
+        <div class="bold">================================</div>
+        <div><strong>PEDIDO:</strong> ${seq}</div>
+        <div><strong>CLIENTE:</strong> ${order.clientName}</div>
+        ${order.clientPhone ? `<div><strong>TEL:</strong> ${order.clientPhone}</div>` : ''}
+        ${itemAddressHtml}
+        <div class="bold">--------------------------------</div>
+        <div style="font-size: 12px; margin-top: 6px;">
+          ${item.quantity}x <strong>${item.name}</strong>
+        </div>
+      </div>
+    `;
+  });
+
   const htmlContent = `
     <html>
       <head>
@@ -402,6 +429,9 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
           <div>Obrigado pela preferência!</div>
           <div class="bold">Dona Lu - Feito com Amor</div>
         </div>
+
+        <!-- Cupons Individuais de Cozinha -->
+        ${individualSlipsHtml}
       </body>
     </html>
   `;
@@ -419,6 +449,35 @@ export function printOrderBrowser(order: OrderDocument, settings: PrinterSetting
       }, 1000);
     }
   }, 350);
+}
+
+// Helper to wrap text to a specific character limit per line
+function wrapText(text: string, limit: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+
+  words.forEach(word => {
+    if ((currentLine + word).length + (currentLine ? 1 : 0) <= limit) {
+      currentLine += (currentLine ? ' ' : '') + word;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      currentLine = word;
+      // If the word itself is longer than limit, break it down
+      while (currentLine.length > limit) {
+        lines.push(currentLine.substring(0, limit));
+        currentLine = currentLine.substring(limit);
+      }
+    }
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
 }
 
 // -------------------------------------------------------------
@@ -503,12 +562,20 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
 
     const maxChars = settings.paperSize === '80mm' ? 48 : 32;
     const nameLen = maxChars - qtyStr.length - priceStr.length;
-    let nameStr = item.name;
-    if (nameStr.length > nameLen) {
-      nameStr = nameStr.substring(0, nameLen - 3) + '...';
+
+    if (item.name.length <= nameLen) {
+      const padSize = nameLen - item.name.length;
+      writeLine(`${qtyStr}${item.name}${' '.repeat(padSize > 0 ? padSize : 0)}${priceStr}`);
+    } else {
+      // Wrap name to maxChars - 3 (to account for qtyStr and indentation)
+      const wrappedName = wrapText(item.name, maxChars - 3);
+      writeLine(`${qtyStr}${wrappedName[0]}`);
+      for (let i = 1; i < wrappedName.length; i++) {
+        writeLine(`   ${wrappedName[i]}`);
+      }
+      // Print price right-aligned on the next line
+      writeLine(`${' '.repeat(maxChars - priceStr.length)}${priceStr}`);
     }
-    const padSize = nameLen - nameStr.length;
-    writeLine(`${qtyStr}${nameStr}${' '.repeat(padSize > 0 ? padSize : 0)}${priceStr}`);
 
     if (item.withCatupiry) {
       writeLine('  + Catupiry');
@@ -568,6 +635,44 @@ function encodeEscPos(order: OrderDocument, settings: PrinterSettings): Uint8Arr
   // 8. Footer Feed
   writeLine('Obrigado pela preferencia!');
   writeLine('Dona Lu - Feito com Amor');
+
+  // 9. Individual Item slips for Kitchen/Delivery
+  order.items.forEach((item, index) => {
+    buffer.push(...LINE_FEED, ...LINE_FEED);
+    buffer.push(...ALIGN_LEFT, ...BOLD_ON);
+    const maxChars = settings.paperSize === '80mm' ? 48 : 32;
+    writeLine('='.repeat(maxChars));
+    writeLine(`PEDIDO: ${seq}`);
+    writeLine(`CLIENTE: ${order.clientName}`);
+    if (order.clientPhone) {
+      writeLine(`TEL: ${order.clientPhone}`);
+    }
+    if (order.orderType === 'delivery' && order.address) {
+      writeLine(`ENDERECO: ${order.address.street}, ${order.address.number}`);
+      if (order.address.complement) {
+        writeLine(`COMPL: ${order.address.complement}`);
+      }
+    }
+    writeLine('-'.repeat(maxChars));
+    buffer.push(...BOLD_OFF);
+
+    // Print item details (with name wrapping)
+    const qtyStr = `${item.quantity}x `;
+    const wrappedName = wrapText(item.name, maxChars - 3);
+    writeLine(`${qtyStr}${wrappedName[0]}`);
+    for (let i = 1; i < wrappedName.length; i++) {
+      writeLine(`   ${wrappedName[i]}`);
+    }
+    
+    // Do not add 10 blank lines to the last item
+    if (index < order.items.length - 1) {
+      // 10 blank lines between slips
+      for (let i = 0; i < 10; i++) {
+        buffer.push(...LINE_FEED);
+      }
+    }
+  });
+
   buffer.push(...LINE_FEED, ...LINE_FEED, ...LINE_FEED, ...LINE_FEED);
 
   // Paper Cut Command
