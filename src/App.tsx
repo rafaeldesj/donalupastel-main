@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import type { OrderItem } from './types/order';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthButton } from './components/common/AuthButton';
-import { DeliveryMap } from './components/DeliveryMap';
 import { ShieldCheck, ChefHat, CreditCard, Bell, ShoppingCart, Heart, FileText, Users, Navigation, CheckCircle, Clock, Map, Settings, Menu, ChevronDown, Grid, Boxes, MessageCircle } from 'lucide-react';
 import logoDonalu from './assets/logo_donalu.png';
 import logoDonaluMobile from './assets/logo_donalu_mobile.png';
@@ -24,6 +23,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const TableMap = lazy(() => import('./pages/staff/TableMap'));
 const StockControl = lazy(() => import('./pages/staff/StockControl'));
 const SupportPanel = lazy(() => import('./pages/staff/SupportPanel'));
+const RiderLocationMonitor = lazy(() => import('./pages/manager/RiderLocationMonitor'));
 
 // Premium feedback state for lazy loading
 const ViewLoader = () => (
@@ -281,6 +281,7 @@ const MainLayout = () => {
     if (role === 'developer' || role === 'owner' || role === 'manager' || (role === 'staff' && staff?.delivery)) {
       menuItems.push({ id: 'entrega_andamento', label: 'Entrega em Andamento', icon: Navigation });
       menuItems.push({ id: 'entrega_finalizada', label: 'Entregas Finalizadas', icon: CheckCircle });
+      menuItems.push({ id: 'teste_mapa', label: 'Localização dos Entregadores', icon: Map });
     }
 
     // Painel Administrativo (admin, owner, dev)
@@ -296,11 +297,6 @@ const MainLayout = () => {
     // Painel de Gestão de Usuários (admin, owner, dev)
     if (['developer', 'owner', 'manager'].includes(role)) {
       menuItems.push({ id: 'users', label: 'Usuários', icon: Users });
-    }
-
-    // Teste de mapa — apenas developer
-    if (role === 'developer') {
-      menuItems.push({ id: 'teste_mapa', label: 'Localização dos Entregadores', icon: Map });
     }
 
     // Controle de Estoque — visível a todos, menos clientes e entregadores
@@ -321,8 +317,8 @@ const MainLayout = () => {
 
   const menuGroups = [
     { label: 'Cardápio / Cliente', ids: ['menu', 'tracking', 'fidelidade', 'suporte_virtual'] },
-    { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada'] },
-    { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'mapa_mesas', 'estoque', 'painel_atendimento', 'admin', 'teste_mapa'] },
+    { label: 'Operações de Entrega', ids: ['entrega_andamento', 'entrega_finalizada', 'teste_mapa'] },
+    { label: 'Painéis de Trabalho', ids: ['cozinha', 'atendimento', 'caixa', 'mapa_mesas', 'estoque', 'painel_atendimento', 'admin'] },
     { label: 'Configurações', ids: ['users', 'configuracoes'] },
   ];
 const getRoleLabel = (r: string): React.ReactNode => {
@@ -473,15 +469,7 @@ const getRoleLabel = (r: string): React.ReactNode => {
             {activeView === 'users' && <UserManagement />}
             {activeView === 'configuracoes' && <SettingsPage />}
             {activeView === 'mapa_mesas' && <TableMap />}
-            {activeView === 'teste_mapa' && (
-              <div style={{ maxWidth: '680px', margin: '0 auto' }}>
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <h2 style={{ margin: '0 0 0.25rem', color: 'var(--text-primary)' }}>🗺️ Localização dos Entregadores</h2>
-                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Valide aqui a busca de endereço e a geolocalização antes de integrar ao pedido.</p>
-                </div>
-                <DeliveryMap onAddressSelect={(addr) => console.log('Endereço selecionado:', addr)} />
-              </div>
-            )}
+            {activeView === 'teste_mapa' && <RiderLocationMonitor />}
           </Suspense>
           
           {/* Mobile Footer (visible only on mobile, scrolls with content) */}

@@ -89,6 +89,23 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
     }
   };
 
+  const handleRemoveDeliverer = async (orderId: string) => {
+    if (!window.confirm('Tem certeza que deseja retirar o entregador deste pedido e enviá-lo de volta ao balcão?')) return;
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'ready',
+        deliveryUid: null,
+        deliveryName: null,
+        deliveryCoords: null,
+        dispatchedAt: null
+      });
+      alert('Entregador removido. O pedido voltou ao balcão de entrega.');
+    } catch (err) {
+      console.error('Erro ao remover entregador:', err);
+      alert('Erro ao remover entregador.');
+    }
+  };
+
   const handleApproveCashierOrder = async (order: OrderDocument) => {
     if (!order.id) return;
     try {
@@ -856,6 +873,18 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
   const cashierOrders = orders.filter(o => o.status === 'ready');
   const cashierEvaluationOrders = orders.filter(o => o.status === 'aguardando_caixa' || o.status === 'pendente_pagamento' || o.status === 'awaiting_payment');
   const deliveryOrders = orders.filter(o => (o.status === 'ready' || o.status === 'delivering') && o.address);
+  const sortedDeliveryOrders = [...deliveryOrders].sort((a, b) => {
+    if (a.status !== b.status) {
+      return a.status === 'delivering' ? -1 : 1;
+    }
+    const uidA = a.deliveryUid || '';
+    const uidB = b.deliveryUid || '';
+    if (uidA !== uidB) return uidA.localeCompare(uidB);
+    const roA = a.routeOrder ?? 999;
+    const roB = b.routeOrder ?? 999;
+    if (roA !== roB) return roA - roB;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
 
   const hasAnyFunction = staff && (staff.cook || staff.attendant || staff.cashier || staff.delivery);
 
@@ -1242,6 +1271,89 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                                 </button>
                               )}
                             </div>
+                          )}
+
+                          {isDelivery && hasDeliverer && (
+                            <>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem' }}>
+                                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Ordem de Entrega:</label>
+                                <select
+                                  value={order.routeOrder || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                                    updateDoc(doc(db, 'orders', order.id!), { routeOrder: val })
+                                      .catch(err => console.error("Erro ao definir rota:", err));
+                                  }}
+                                  style={{
+                                    background: '#1f2937',
+                                    color: '#fff',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '6px',
+                                    padding: '0.4rem',
+                                    fontSize: '0.85rem',
+                                    outline: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <option value="">Automático</option>
+                                  <option value="1">1ª Entrega (Prioridade Máxima)</option>
+                                  <option value="2">2ª Entrega</option>
+                                  <option value="3">3ª Entrega</option>
+                                  <option value="4">4ª Entrega</option>
+                                  <option value="5">5ª Entrega</option>
+                                </select>
+                              </div>
+
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', background: 'rgba(255,255,255,0.03)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '0.25rem' }}>
+                                <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Trocar Entregador:</label>
+                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                  <select
+                                    value={selectedDelivererMap[order.id!] || ''}
+                                    onChange={(e) => setSelectedDelivererMap(prev => ({ ...prev, [order.id!]: e.target.value }))}
+                                    style={{
+                                      flex: 1,
+                                      background: '#1f2937',
+                                      color: '#fff',
+                                      border: '1px solid rgba(255,255,255,0.1)',
+                                      borderRadius: '6px',
+                                      padding: '0.4rem',
+                                      fontSize: '0.85rem'
+                                    }}
+                                  >
+                                    <option value="">Selecione outro...</option>
+                                    {deliverers.filter(d => d.uid !== order.deliveryUid).map(d => (
+                                      <option key={d.uid} value={d.uid}>{d.name || d.displayName || d.email}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAssignDeliverer(order.id!, selectedDelivererMap[order.id!] || '')}
+                                    className="btn-small btn-primary"
+                                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                                  >
+                                    Confirmar
+                                  </button>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDeliverer(order.id!)}
+                                className="btn-small btn-danger"
+                                style={{
+                                  width: '100%',
+                                  padding: '0.6rem',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  color: '#f87171',
+                                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                  marginTop: '0.25rem'
+                                }}
+                              >
+                                🚫 Retirar Entregador (Voltar ao Balcão)
+                              </button>
+                            </>
                           )}
 
                           {isDelivery && !hasDeliverer && isAuthorizedCancel && (
@@ -1901,7 +2013,7 @@ export const StaffDashboard = ({ filter }: StaffDashboardProps) => {
                 {deliveryOrders.length === 0 ? (
                   <p style={{ color: 'var(--text-secondary)', padding: '1rem', gridColumn: '1 / -1', textAlign: 'center' }}>Nenhuma entrega pendente.</p>
                 ) : (
-                  deliveryOrders.map((order) => (
+                  sortedDeliveryOrders.map((order) => (
                     <div key={order.id} className="order-item" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', padding: '1.25rem', borderRadius: '16px' }}>
                       <div className="order-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.25rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>

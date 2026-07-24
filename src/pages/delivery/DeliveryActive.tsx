@@ -354,10 +354,10 @@ export const DeliveryActive = () => {
     return () => unsubscribe();
   }, []);
 
-  // Pedido ativo deste entregador
-  const activeOrder = orders.find(
-    (o) => o.status === 'delivering' && o.deliveryUid === user?.uid
-  );
+  // Pedido ativo deste entregador ordenado pela rota configurada pelo admin
+  const activeOrder = orders
+    .filter((o) => o.status === 'delivering' && o.deliveryUid === user?.uid)
+    .sort((a, b) => (a.routeOrder ?? 999) - (b.routeOrder ?? 999) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0];
 
   // Pedidos disponíveis
   const availableOrders = orders.filter(

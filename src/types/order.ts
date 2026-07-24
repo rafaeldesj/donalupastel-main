@@ -54,4 +54,5 @@ export interface OrderDocument {
   kitchenDurationSeconds?: number;
   dispatchedAt?: string;
   deliveredAt?: string;
+  routeOrder?: number | null;
 }
